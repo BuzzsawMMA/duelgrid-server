@@ -8,7 +8,7 @@ app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' },
+  cors: { origin: ['http://localhost:3000', 'https://duelgrid-frontend.onrender.com'] },
 });
 
 const gridSize = 8;
