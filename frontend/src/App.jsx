@@ -1,26 +1,32 @@
-const express = require('express');
-const http = require('http');
-const cors = require('cors');
-const { Server } = require('socket.io');
+import { io } from 'socket.io-client';
+import React, { useState, useEffect, useRef } from 'react';
+import knightSprite from './sprites/knight - Copy.PNG';
+import archerSprite from './sprites/archer (2).PNG';
+import mageSprite from './sprites/Mage - Copy.PNG';
+import healerSprite from './sprites/healer1.png';
+import warriorSprite from './sprites/warrior - Copy.PNG';
+import rogueSprite from './sprites/rogue - Copy.PNG';
+import summonerSprite from './sprites/summoner - Copy.PNG';
+import paladinSprite from './sprites/paladin - Copy.PNG';
+import './App.css';
 
-const app = express();
-app.use(cors());
-
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' },
+// ⚠️ Replace with your backend URL
+const socket = io('https://duelgrid-server.onrender.com', {
+  transports: ['websocket'], // Force WebSocket transport to avoid http dependency
 });
 
 const gridSize = 8;
+
+// Use imported sprites for React-friendly paths
 const baseCharacters = [
-  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: '/sprites/knight - Copy.PNG' },
-  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: '/sprites/archer (2).PNG' },
-  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: '/sprites/Mage - Copy.PNG' },
-  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: '/sprites/healer1.png' },
-  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: '/sprites/warrior - Copy.PNG' },
-  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: '/sprites/rogue - Copy.PNG' },
-  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: '/sprites/summoner - Copy.PNG' },
-  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: '/sprites/paladin - Copy.PNG' },
+  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: knightSprite },
+  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: archerSprite },
+  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: mageSprite },
+  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: healerSprite },
+  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: warriorSprite },
+  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: rogueSprite },
+  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: summonerSprite },
+  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: paladinSprite },
 ];
 
 let idCounter = 1;
@@ -35,176 +41,228 @@ const generateTeam = (team, row) =>
     hasAttacked: false,
   }));
 
-const rooms = {};
-let roomCounter = 1;
+const initialCharacters = [
+  ...generateTeam('A', 0),
+  ...generateTeam('B', gridSize - 1),
+];
 
-// Matchmaking helper
-function findAvailableRoom() {
-  for (const roomId in rooms) {
-    if (Object.keys(rooms[roomId].players).length === 1) {
-      return roomId;
-    }
-  }
-  return null;
-}
+function App() {
+  const [myTeam, setMyTeam] = useState(null);
+  const [characters, setCharacters] = useState(initialCharacters);
+  const [selectedId, setSelectedId] = useState(null);
+  const [turn, setTurn] = useState('A');
+  const [winner, setWinner] = useState(null);
 
-// Room creator
-function createRoom() {
-  const newRoomId = `room-${roomCounter++}`;
-  rooms[newRoomId] = {
-    gameState: {
-      characters: [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)],
-      turn: 'A',
-      winner: null,
-    },
-    players: {},
-    waitingTeam: 'A',
-  };
-  return newRoomId;
-}
+  // Use ref to keep latest turn for emitGameState to avoid stale closures
+  const turnRef = useRef(turn);
+  useEffect(() => {
+    turnRef.current = turn;
+  }, [turn]);
 
-// Utility
-const areAdjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+  const selectedChar = characters.find((c) => c.id === selectedId);
 
-function validateAndUpdateGameRoom(room, newState, playerTeam) {
-  if (!newState || !newState.characters || !newState.turn) return false;
-  if (playerTeam !== room.gameState.turn) return false;
+  useEffect(() => {
+    // Setup socket listeners once
+    const onGameState = ({ characters: newChars, turn: newTurn, winner: newWinner }) => {
+      setCharacters(newChars);
+      setTurn(newTurn);
+      setWinner(newWinner);
+      setSelectedId(null);
+    };
 
-  const oldChars = room.gameState.characters;
-  const newChars = newState.characters;
+    const onAssignTeam = (team) => {
+      setMyTeam(team);
+      console.log('Assigned team:', team);
+    };
 
-  for (let newChar of newChars) {
-    const oldChar = oldChars.find((c) => c.id === newChar.id);
-    if (!oldChar) return false;
+    socket.on('gameState', onGameState);
+    socket.on('assignTeam', onAssignTeam);
 
-    if (newChar.team !== oldChar.team) return false;
-    if (newChar.hp > oldChar.hp) return false;
-    if (newChar.movesLeft > oldChar.movesLeft) return false;
+    return () => {
+      socket.off('gameState', onGameState);
+      socket.off('assignTeam', onAssignTeam);
+    };
+  }, []);
 
-    const distMoved = Math.abs(newChar.x - oldChar.x) + Math.abs(newChar.y - oldChar.y);
-    if (distMoved > oldChar.movesLeft) return false;
-    if (newChar.movesLeft !== oldChar.movesLeft - distMoved) return false;
-
-    if (oldChar.hasAttacked && !newChar.hasAttacked) return false;
-  }
-
-  const positions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
-  if (new Set(positions).size !== positions.length) return false;
-
-  const attackers = newChars.filter(nc => {
-    const oc = oldChars.find(c => c.id === nc.id);
-    return !oc.hasAttacked && nc.hasAttacked && nc.hp > 0;
-  });
-
-  for (const attacker of attackers) {
-    const oldAttacker = oldChars.find(c => c.id === attacker.id);
-    const adjacentEnemiesOld = oldChars.filter(c => c.team !== attacker.team && areAdjacent(c, oldAttacker) && c.hp > 0);
-
-    let attackedEnemyFound = false;
-    for (const oldEnemy of adjacentEnemiesOld) {
-      const newEnemy = newChars.find(c => c.id === oldEnemy.id);
-      const hpDiff = oldEnemy.hp - newEnemy.hp;
-      if (hpDiff === attacker.atk) {
-        attackedEnemyFound = true;
-        break;
-      }
-    }
-
-    if (!attackedEnemyFound) return false;
-  }
-
-  const turnChanged = newState.turn !== room.gameState.turn;
-  if (turnChanged) {
-    if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) return false;
-
-    for (const c of newState.characters) {
-      if (c.team === newState.turn) {
-        const baseChar = baseCharacters.find(bc => bc.name === c.name);
-        if (!baseChar) return false;
-        if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) return false;
-      }
-    }
-  }
-
-  const aliveA = newChars.some(c => c.team === 'A' && c.hp > 0);
-  const aliveB = newChars.some(c => c.team === 'B' && c.hp > 0);
-  let winner = null;
-  if (!aliveA) winner = 'B';
-  if (!aliveB) winner = 'A';
-
-  room.gameState = {
-    characters: newChars,
-    turn: newState.turn,
-    winner,
+  // Emit game state to server
+  const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
+    socket.emit('updateGame', {
+      characters: updatedChars,
+      turn: nextTurn,
+      winner: winnerCheck,
+    });
   };
 
-  return true;
+  // Only allow selecting your own alive character on your turn
+  const handleTileClick = (char) => {
+    if (!char) return;
+    if (char.team === myTeam && turn === myTeam && char.hp > 0) {
+      setSelectedId(char.id);
+    }
+  };
+
+  // Move character within bounds, if tile is free, and moves left
+  const moveCharacter = (id, dx, dy) => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+
+    const newCharacters = characters.map((c) => {
+      if (c.id === id && c.team === myTeam && c.movesLeft > 0) {
+        const newX = Math.max(0, Math.min(gridSize - 1, c.x + dx));
+        const newY = Math.max(0, Math.min(gridSize - 1, c.y + dy));
+
+        const isOccupied = characters.some(
+          (other) => other.id !== c.id && other.x === newX && other.y === newY && other.hp > 0
+        );
+
+        if (!isOccupied) {
+          return { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 };
+        }
+      }
+      return c;
+    });
+
+    setCharacters(newCharacters);
+    emitGameState(newCharacters);
+  };
+
+  // Attack adjacent enemy if hasn't attacked yet
+  const attack = (attackerId) => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+
+    const attacker = characters.find((c) => c.id === attackerId);
+    if (!attacker || attacker.hasAttacked) return;
+
+    const targets = characters.filter(
+      (c) =>
+        c.team !== attacker.team &&
+        Math.abs(c.x - attacker.x) + Math.abs(c.y - attacker.y) === 1 &&
+        c.hp > 0
+    );
+
+    if (targets.length > 0) {
+      const target = targets[0]; // attack first adjacent enemy found
+      const updatedChars = characters.map((c) => {
+        if (c.id === target.id) {
+          return { ...c, hp: Math.max(0, c.hp - attacker.atk) };
+        }
+        if (c.id === attacker.id) {
+          return { ...c, hasAttacked: true };
+        }
+        return c;
+      });
+
+      setCharacters(updatedChars);
+      emitGameState(updatedChars);
+    }
+  };
+
+  // End current turn, reset next team's moves and attacks, check for winner
+  const endTurn = () => {
+    if (turn !== myTeam) return;
+
+    const nextTurn = turn === 'A' ? 'B' : 'A';
+
+    const updatedChars = characters.map((c) =>
+      c.team === nextTurn
+        ? { ...c, movesLeft: c.moveRange, hasAttacked: false }
+        : c
+    );
+
+    const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
+    const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
+    const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
+
+    setCharacters(updatedChars);
+    setTurn(nextTurn);
+    setWinner(newWinner);
+    setSelectedId(null);
+    emitGameState(updatedChars, nextTurn, newWinner);
+  };
+
+  // Surrender immediately ends game with opponent win
+  const surrender = () => {
+    if (!myTeam) return;
+    const opponent = myTeam === 'A' ? 'B' : 'A';
+    setWinner(opponent);
+    emitGameState(characters, turnRef.current, opponent);
+  };
+
+  return (
+    <div className="App">
+      <h1>DuelGrid</h1>
+      <h2>You are Team {myTeam || '...'}</h2>
+      <h2>Turn: Team {turn}</h2>
+
+      <div className="grid">
+        {Array.from({ length: gridSize }).map((_, y) => (
+          <div key={y} className="row">
+            {Array.from({ length: gridSize }).map((_, x) => {
+              const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
+              return (
+                <div
+                  key={x}
+                  className={`tile ${char ? 'occupied' : ''} ${
+                    selectedId === char?.id ? 'selected' : ''
+                  }`}
+                  onClick={() => handleTileClick(char)}
+                >
+                  {char && (
+                    <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
+                      <img src={char.sprite} alt={char.name} className="sprite" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {selectedChar && selectedChar.team === myTeam && (
+        <div className="character-stats">
+          <h3>{selectedChar.name}</h3>
+          <p>HP: {selectedChar.hp}</p>
+          <p>ATK: {selectedChar.atk}</p>
+          <p>Moves Left: {selectedChar.movesLeft}</p>
+        </div>
+      )}
+
+      <div className="controls">
+        {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
+          <>
+            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft === 0}>
+              Move Left
+            </button>
+            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft === 0}>
+              Move Right
+            </button>
+            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft === 0}>
+              Move Up
+            </button>
+            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft === 0}>
+              Move Down
+            </button>
+            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked}>
+              Attack
+            </button>
+          </>
+        )}
+
+        {!winner && (
+          <button onClick={endTurn} disabled={turn !== myTeam}>
+            End Turn
+          </button>
+        )}
+        {!winner && (
+          <button onClick={surrender} disabled={!myTeam}>
+            Surrender
+          </button>
+        )}
+
+        {winner && <h2>Team {winner} wins!</h2>}
+      </div>
+    </div>
+  );
 }
 
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  let roomId = findAvailableRoom();
-  if (!roomId) {
-    roomId = createRoom();
-  }
-
-  const room = rooms[roomId];
-
-  // Full room check
-  if (Object.keys(room.players).length >= 2) {
-    socket.emit('errorMessage', 'Room is full. Try again.');
-    return;
-  }
-
-  const assignedTeam = room.waitingTeam;
-  room.players[socket.id] = assignedTeam;
-  room.waitingTeam = assignedTeam === 'A' ? 'B' : 'A';
-
-  socket.join(roomId);
-  socket.roomId = roomId;
-
-  socket.emit('assignTeam', assignedTeam);
-  socket.emit('gameState', room.gameState);
-  io.to(roomId).emit('playerJoined', { playerId: socket.id, team: assignedTeam });
-
-  socket.on('updateGame', (newState) => {
-    const playerTeam = room.players[socket.id];
-    if (!playerTeam) return;
-
-    const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
-    if (valid) {
-      io.to(roomId).emit('gameState', room.gameState);
-    } else {
-      socket.emit('errorMessage', 'Invalid game update.');
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-
-    const roomId = socket.roomId;
-    if (!roomId || !rooms[roomId]) return;
-
-    const room = rooms[roomId];
-    const playerTeam = room.players[socket.id];
-    if (playerTeam) {
-      const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
-      room.gameState.winner = opponentTeam;
-      io.to(roomId).emit('gameState', room.gameState);
-    }
-
-    delete room.players[socket.id];
-    io.to(roomId).emit('playerLeft', socket.id);
-
-    if (Object.keys(room.players).length === 0) {
-      delete rooms[roomId];
-      console.log(`Room ${roomId} deleted`);
-    }
-  });
-});
-
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+export default App;
