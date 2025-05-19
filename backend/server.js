@@ -38,30 +38,13 @@ const generateTeam = (team, row) =>
 const rooms = {};
 let roomCounter = 1;
 
-function findOrCreateRoom() {
-  for (const roomId in rooms) {
-    if (Object.keys(rooms[roomId].players).length === 1) {
-      return roomId;
-    }
-  }
-
-  const newRoomId = `room-${roomCounter++}`;
-  rooms[newRoomId] = {
-    gameState: {
-      characters: [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)],
-      turn: 'A',
-      winner: null,
-    },
-    players: {},
-    waitingTeam: 'A',
-  };
-  return newRoomId;
-}
+const waitingQueue = [];  // <-- New queue to hold waiting players
 
 const areAdjacent = (a, b) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
+  // (your validation logic stays the same)
   if (!newState || !newState.characters || !newState.turn) return false;
   if (playerTeam !== room.gameState.turn) return false;
 
@@ -148,33 +131,63 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  const roomId = findOrCreateRoom();
-  const room = rooms[roomId];
+  // Add the new player to the waiting queue
+  waitingQueue.push(socket.id);
+  console.log('Waiting queue:', waitingQueue);
 
-  // Safety check: only allow two players per room
-  if (Object.keys(room.players).length >= 2) {
-    socket.emit('errorMessage', 'Room is full. Try again.');
-    return;
+  // If there are 2 players, create a new room and assign teams
+  if (waitingQueue.length >= 2) {
+    const playerA = waitingQueue.shift();
+    const playerB = waitingQueue.shift();
+
+    const newRoomId = `room-${roomCounter++}`;
+    rooms[newRoomId] = {
+      gameState: {
+        characters: [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)],
+        turn: 'A',
+        winner: null,
+      },
+      players: {},
+      waitingTeam: null, // Not needed now
+    };
+
+    const room = rooms[newRoomId];
+
+    // Assign players to teams
+    room.players[playerA] = 'A';
+    room.players[playerB] = 'B';
+
+    // Join players to room
+    io.sockets.sockets.get(playerA)?.join(newRoomId);
+    io.sockets.sockets.get(playerB)?.join(newRoomId);
+
+    // Inform players of their team and initial game state
+    io.to(playerA).emit('assignTeam', 'A');
+    io.to(playerB).emit('assignTeam', 'B');
+
+    io.to(newRoomId).emit('gameState', room.gameState);
+    io.to(newRoomId).emit('playerJoined', { playerId: playerA, team: 'A' });
+    io.to(newRoomId).emit('playerJoined', { playerId: playerB, team: 'B' });
+
+    console.log(`Room ${newRoomId} created with players ${playerA} (A) and ${playerB} (B)`);
+  } else {
+    // Notify the player they are waiting for an opponent
+    socket.emit('waitingForOpponent');
   }
 
-  const assignedTeam = room.waitingTeam;
-  room.players[socket.id] = assignedTeam;
-  room.waitingTeam = assignedTeam === 'A' ? 'B' : 'A';
-
-  socket.join(roomId);
-
-  socket.emit('assignTeam', assignedTeam);
-  socket.emit('gameState', room.gameState);
-
-  io.to(roomId).emit('playerJoined', { playerId: socket.id, team: assignedTeam });
-
+  // Handle game updates from any socket
   socket.on('updateGame', (newState) => {
+    // Find the room this socket belongs to
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) return;
+
+    const room = rooms[playerRoomId];
     const playerTeam = room.players[socket.id];
     if (!playerTeam) return;
 
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
     if (valid) {
-      io.to(roomId).emit('gameState', room.gameState);
+      io.to(playerRoomId).emit('gameState', room.gameState);
     } else {
       socket.emit('errorMessage', 'Invalid game update.');
     }
@@ -183,19 +196,32 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
 
+    // Remove from waiting queue if waiting
+    const waitingIndex = waitingQueue.indexOf(socket.id);
+    if (waitingIndex !== -1) {
+      waitingQueue.splice(waitingIndex, 1);
+      console.log(`Removed ${socket.id} from waiting queue`);
+      return;
+    }
+
+    // Find the room this socket belongs to
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) return;
+
+    const room = rooms[playerRoomId];
     const playerTeam = room.players[socket.id];
     if (playerTeam) {
       const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
       room.gameState.winner = opponentTeam;
-      io.to(roomId).emit('gameState', room.gameState);
+      io.to(playerRoomId).emit('gameState', room.gameState);
     }
 
     delete room.players[socket.id];
-    io.to(roomId).emit('playerLeft', socket.id);
+    io.to(playerRoomId).emit('playerLeft', socket.id);
 
     if (Object.keys(room.players).length === 0) {
-      delete rooms[roomId];
-      console.log(`Room ${roomId} deleted because empty`);
+      delete rooms[playerRoomId];
+      console.log(`Room ${playerRoomId} deleted because empty`);
     }
   });
 });
