@@ -16,7 +16,7 @@ const baseCharacters = [
   { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: '/sprites/knight - Copy.PNG' },
   { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: '/sprites/archer (2).PNG' },
   { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: '/sprites/Mage - Copy.PNG' },
-  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: '/sprites/healer - COpy.PNG' },
+  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: '/sprites/healer1.png' },
   { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: '/sprites/warrior - Copy.PNG' },
   { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: '/sprites/rogue - Copy.PNG' },
   { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: '/sprites/summoner - Copy.PNG' },
@@ -35,18 +35,16 @@ const generateTeam = (team, row) =>
     hasAttacked: false,
   }));
 
-// All active rooms: roomId -> { gameState, players (socketId->team), waitingTeam }
 const rooms = {};
 let roomCounter = 1;
 
-// Helper to find a room waiting for 2nd player or create a new one
 function findOrCreateRoom() {
   for (const roomId in rooms) {
     if (Object.keys(rooms[roomId].players).length === 1) {
       return roomId;
     }
   }
-  // Create new room
+
   const newRoomId = `room-${roomCounter++}`;
   rooms[newRoomId] = {
     gameState: {
@@ -60,14 +58,11 @@ function findOrCreateRoom() {
   return newRoomId;
 }
 
-// Helper: check if two positions are adjacent (manhattan distance = 1)
 const areAdjacent = (a, b) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
-// Validation and update function scoped per room
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
   if (!newState || !newState.characters || !newState.turn) return false;
-
   if (playerTeam !== room.gameState.turn) return false;
 
   const oldChars = room.gameState.characters;
@@ -78,14 +73,11 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     if (!oldChar) return false;
 
     if (newChar.team !== oldChar.team) return false;
-
     if (newChar.hp > oldChar.hp) return false;
-
     if (newChar.movesLeft > oldChar.movesLeft) return false;
 
     const distMoved = Math.abs(newChar.x - oldChar.x) + Math.abs(newChar.y - oldChar.y);
     if (distMoved > oldChar.movesLeft) return false;
-
     if (newChar.movesLeft !== oldChar.movesLeft - distMoved) return false;
 
     if (oldChar.hasAttacked && !newChar.hasAttacked) return false;
@@ -157,20 +149,23 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   const roomId = findOrCreateRoom();
-  socket.join(roomId);
-
   const room = rooms[roomId];
 
-  // Assign team to player in this room
+  // Safety check: only allow two players per room
+  if (Object.keys(room.players).length >= 2) {
+    socket.emit('errorMessage', 'Room is full. Try again.');
+    return;
+  }
+
   const assignedTeam = room.waitingTeam;
   room.players[socket.id] = assignedTeam;
   room.waitingTeam = assignedTeam === 'A' ? 'B' : 'A';
 
-  // Send assigned team and initial game state to player
+  socket.join(roomId);
+
   socket.emit('assignTeam', assignedTeam);
   socket.emit('gameState', room.gameState);
 
-  // Notify others in room that player joined
   io.to(roomId).emit('playerJoined', { playerId: socket.id, team: assignedTeam });
 
   socket.on('updateGame', (newState) => {
@@ -179,7 +174,6 @@ io.on('connection', (socket) => {
 
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
     if (valid) {
-      // Broadcast updated game state only to room
       io.to(roomId).emit('gameState', room.gameState);
     } else {
       socket.emit('errorMessage', 'Invalid game update.');
@@ -191,22 +185,14 @@ io.on('connection', (socket) => {
 
     const playerTeam = room.players[socket.id];
     if (playerTeam) {
-      // Opponent wins by surrender
       const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
-
       room.gameState.winner = opponentTeam;
-
-      // Broadcast game state with winner
       io.to(roomId).emit('gameState', room.gameState);
     }
 
-    // Remove player from room
     delete room.players[socket.id];
-
-    // Notify others in room player left
     io.to(roomId).emit('playerLeft', socket.id);
 
-    // If room empty, delete it
     if (Object.keys(room.players).length === 0) {
       delete rooms[roomId];
       console.log(`Room ${roomId} deleted because empty`);

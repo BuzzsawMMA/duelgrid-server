@@ -1,21 +1,39 @@
+/* Fix body and html background + layout */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #111;
+  overflow-x: hidden;
+}
 
+/* Main app styling */
 .App {
+  min-height: 100vh; /* fill full height of screen */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   background-color: #111;
   color: white;
   font-family: sans-serif;
   text-align: center;
   padding: 20px;
+  box-sizing: border-box;
 }
 
+/* Game grid */
 .grid {
   display: inline-block;
   margin-bottom: 20px;
 }
 
+/* Grid rows */
 .row {
   display: flex;
 }
 
+/* Individual tiles */
 .tile {
   width: 60px;
   height: 60px;
@@ -31,11 +49,13 @@
   background-color: #333;
 }
 
+/* Character sprites */
 .character img.sprite {
   width: 40px;
   height: 40px;
 }
 
+/* Stats box */
 .stats {
   position: absolute;
   bottom: 0;
