@@ -12,12 +12,11 @@ import './App.css';
 
 // ⚠️ Replace with your backend URL
 const socket = io('https://duelgrid-server.onrender.com', {
-  transports: ['websocket'], // Force WebSocket transport to avoid http dependency
+  transports: ['websocket'], // Force WebSocket transport for real-time communication
 });
 
 const gridSize = 8;
 
-// Use imported sprites for React-friendly paths
 const baseCharacters = [
   { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: knightSprite },
   { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: archerSprite },
@@ -41,10 +40,7 @@ const generateTeam = (team, row) =>
     hasAttacked: false,
   }));
 
-const initialCharacters = [
-  ...generateTeam('A', 0),
-  ...generateTeam('B', gridSize - 1),
-];
+const initialCharacters = [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)];
 
 function App() {
   const [myTeam, setMyTeam] = useState(null);
@@ -53,7 +49,6 @@ function App() {
   const [turn, setTurn] = useState('A');
   const [winner, setWinner] = useState(null);
 
-  // Use ref to keep latest turn for emitGameState to avoid stale closures
   const turnRef = useRef(turn);
   useEffect(() => {
     turnRef.current = turn;
@@ -62,7 +57,7 @@ function App() {
   const selectedChar = characters.find((c) => c.id === selectedId);
 
   useEffect(() => {
-    // Setup socket listeners once
+    // Setup socket listeners once on mount
     const onGameState = ({ characters: newChars, turn: newTurn, winner: newWinner }) => {
       setCharacters(newChars);
       setTurn(newTurn);
@@ -84,7 +79,7 @@ function App() {
     };
   }, []);
 
-  // Emit game state to server
+  // Emit updated game state to server
   const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
     socket.emit('updateGame', {
       characters: updatedChars,
@@ -93,7 +88,7 @@ function App() {
     });
   };
 
-  // Only allow selecting your own alive character on your turn
+  // Select only own alive characters on your turn
   const handleTileClick = (char) => {
     if (!char) return;
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
@@ -101,7 +96,7 @@ function App() {
     }
   };
 
-  // Move character within bounds, if tile is free, and moves left
+  // Move character if valid move (bounds, free tile, moves left)
   const moveCharacter = (id, dx, dy) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
 
@@ -156,7 +151,7 @@ function App() {
     }
   };
 
-  // End current turn, reset next team's moves and attacks, check for winner
+  // End turn: reset moves and attacks for next team, check winner
   const endTurn = () => {
     if (turn !== myTeam) return;
 
@@ -179,7 +174,7 @@ function App() {
     emitGameState(updatedChars, nextTurn, newWinner);
   };
 
-  // Surrender immediately ends game with opponent win
+  // Surrender: immediately lose and notify opponent
   const surrender = () => {
     if (!myTeam) return;
     const opponent = myTeam === 'A' ? 'B' : 'A';
@@ -193,7 +188,7 @@ function App() {
       <h2>You are Team {myTeam || '...'}</h2>
       <h2>Turn: Team {turn}</h2>
 
-      <div className="grid">
+      <div className="grid" aria-label="Game grid">
         {Array.from({ length: gridSize }).map((_, y) => (
           <div key={y} className="row">
             {Array.from({ length: gridSize }).map((_, x) => {
@@ -205,6 +200,11 @@ function App() {
                     selectedId === char?.id ? 'selected' : ''
                   }`}
                   onClick={() => handleTileClick(char)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
+                  }}
                 >
                   {char && (
                     <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
@@ -218,43 +218,62 @@ function App() {
         ))}
       </div>
 
-      {selectedChar && selectedChar.team === myTeam && (
-        <div className="character-stats">
+      {selectedChar && selectedChar.team === myTeam ? (
+        <div className="character-stats" aria-live="polite">
           <h3>{selectedChar.name}</h3>
           <p>HP: {selectedChar.hp}</p>
           <p>ATK: {selectedChar.atk}</p>
           <p>Moves Left: {selectedChar.movesLeft}</p>
         </div>
+      ) : (
+        <p>{turn === myTeam ? 'Select a character to move or attack.' : "Waiting for opponent's turn..."}</p>
       )}
 
       <div className="controls">
         {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
           <>
-            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft === 0}>
+            <button
+              onClick={() => moveCharacter(selectedId, -1, 0)}
+              disabled={selectedChar.movesLeft === 0}
+              aria-disabled={selectedChar.movesLeft === 0}
+            >
               Move Left
             </button>
-            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft === 0}>
+            <button
+              onClick={() => moveCharacter(selectedId, 1, 0)}
+              disabled={selectedChar.movesLeft === 0}
+              aria-disabled={selectedChar.movesLeft === 0}
+            >
               Move Right
             </button>
-            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft === 0}>
+            <button
+              onClick={() => moveCharacter(selectedId, 0, -1)}
+              disabled={selectedChar.movesLeft === 0}
+              aria-disabled={selectedChar.movesLeft === 0}
+            >
               Move Up
             </button>
-            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft === 0}>
+            <button
+              onClick={() => moveCharacter(selectedId, 0, 1)}
+              disabled={selectedChar.movesLeft === 0}
+              aria-disabled={selectedChar.movesLeft === 0}
+            >
               Move Down
             </button>
-            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked}>
+            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked} aria-disabled={selectedChar.hasAttacked}>
               Attack
             </button>
           </>
         )}
 
         {!winner && (
-          <button onClick={endTurn} disabled={turn !== myTeam}>
+          <button onClick={endTurn} disabled={turn !== myTeam} aria-disabled={turn !== myTeam}>
             End Turn
           </button>
         )}
+
         {!winner && (
-          <button onClick={surrender} disabled={!myTeam}>
+          <button onClick={surrender} disabled={!myTeam} aria-disabled={!myTeam}>
             Surrender
           </button>
         )}
