@@ -13,14 +13,14 @@ const io = new Server(server, {
 
 const gridSize = 8;
 const baseCharacters = [
-  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: '/sprites/knight - Copy.PNG' },
-  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: '/sprites/archer (2).PNG' },
-  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: '/sprites/Mage - Copy.PNG' },
-  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: '/sprites/healer1.png' },
-  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: '/sprites/warrior - Copy.PNG' },
-  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: '/sprites/rogue - Copy.PNG' },
-  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: '/sprites/summoner - Copy.PNG' },
-  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: '/sprites/paladin - Copy.PNG' },
+  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: '/sprites/knight.png' },
+  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: '/sprites/archer.png' },
+  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: '/sprites/mage.png' },
+  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: '/sprites/healer.png' },
+  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: '/sprites/warrior.png' },
+  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: '/sprites/rogue.png' },
+  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: '/sprites/summoner.png' },
+  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: '/sprites/paladin.png' },
 ];
 
 let idCounter = 1;

@@ -1,13 +1,13 @@
 import { io } from 'socket.io-client';
 import React, { useState, useEffect, useRef } from 'react';
-import knightSprite from './sprites/knight - Copy.PNG';
-import archerSprite from './sprites/archer (2).PNG';
-import mageSprite from './sprites/Mage - Copy.PNG';
-import healerSprite from './sprites/healer1.png';
-import warriorSprite from './sprites/warrior - Copy.PNG';
-import rogueSprite from './sprites/rogue - Copy.PNG';
-import summonerSprite from './sprites/summoner - Copy.PNG';
-import paladinSprite from './sprites/paladin - Copy.PNG';
+import knightSprite from './sprites/knight.png';
+import archerSprite from './sprites/archer.png';
+import mageSprite from './sprites/mage.png';
+import healerSprite from './sprites/healer.png';
+import warriorSprite from './sprites/warrior.png';
+import rogueSprite from './sprites/rogue.png';
+import summonerSprite from './sprites/summoner.png';
+import paladinSprite from './sprites/paladin.png';
 import './App.css';
 
 // ⚠️ Replace with your backend URL
