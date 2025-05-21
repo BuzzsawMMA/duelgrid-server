@@ -153,26 +153,41 @@ function App() {
 
   // End turn: reset moves and attacks for next team, check winner
   const endTurn = () => {
-    if (turn !== myTeam) return;
+  if (turn !== myTeam || winner !== null) return;
 
-    const nextTurn = turn === 'A' ? 'B' : 'A';
+  const nextTurn = turn === 'A' ? 'B' : 'A';
 
-    const updatedChars = characters.map((c) =>
-      c.team === nextTurn
-        ? { ...c, movesLeft: c.moveRange, hasAttacked: false }
-        : c
-    );
+  // Reset movesLeft and hasAttacked ONLY for nextTurn team
+  // Keep other characters exactly as is
+  const updatedChars = characters.map((c) => {
+    if (c.team === nextTurn) {
+      // Find base character for correct moveRange reset
+      const baseChar = baseCharacters.find((bc) => bc.name === c.name);
+      return {
+        ...c,
+        movesLeft: baseChar ? baseChar.moveRange : c.movesLeft,
+        hasAttacked: false,
+      };
+    } else {
+      return { ...c };
+    }
+  });
 
-    const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
-    const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
-    const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
+  // Check for alive characters on each team to determine winner
+  const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
+  const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
+  const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
 
-    setCharacters(updatedChars);
-    setTurn(nextTurn);
-    setWinner(newWinner);
-    setSelectedId(null);
-    emitGameState(updatedChars, nextTurn, newWinner);
-  };
+  // Update local state before emitting
+  setCharacters(updatedChars);
+  setTurn(nextTurn);
+  setWinner(newWinner);
+  setSelectedId(null);
+
+  // Emit full updated game state to server
+  emitGameState(updatedChars, nextTurn, newWinner);
+};
+
 
   // Surrender: immediately lose and notify opponent
   const surrender = () => {
