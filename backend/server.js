@@ -95,12 +95,21 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) return false;
 
     for (const c of newState.characters) {
-      if (c.team === newState.turn) {
-        const baseChar = baseCharacters.find(bc => bc.name === c.name);
-        if (!baseChar) return false;
-        if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) return false;
-      }
-    }
+  const oldC = oldChars.find(oc => oc.id === c.id);
+  if (!oldC) return false;
+
+  if (c.team === newState.turn) {
+    // This is the NEW player's team — should be RESET
+    const baseChar = baseCharacters.find(bc => bc.name === c.name);
+    if (!baseChar) return false;
+    if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) return false;
+  } else {
+    // This is the old player's team — their state should not "improve"
+    if (c.movesLeft > oldC.movesLeft) return false;
+    if (oldC.hasAttacked && !c.hasAttacked) return false;
+  }
+}
+
   } else {
     for (const c of newState.characters) {
       const oldC = oldChars.find(oc => oc.id === c.id);
