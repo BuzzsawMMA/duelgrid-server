@@ -12,7 +12,7 @@ import './App.css';
 
 // ⚠️ Replace with your backend URL
 const socket = io('https://duelgrid-server.onrender.com', {
-  transports: ['websocket'], // Force WebSocket transport for real-time communication
+  transports: ['websocket'],
 });
 
 const gridSize = 8;
@@ -49,6 +49,7 @@ function App() {
   const [turn, setTurn] = useState('A');
   const [winner, setWinner] = useState(null);
 
+  // Ref to keep latest turn value for use inside socket callbacks and emitters
   const turnRef = useRef(turn);
   useEffect(() => {
     turnRef.current = turn;
@@ -56,7 +57,7 @@ function App() {
 
   const selectedChar = characters.find((c) => c.id === selectedId);
 
-  // Memoize handlers so they have stable references
+  // onGameState uses setState hooks directly (no stale closure issues)
   const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
     setCharacters(newChars);
     setTurn(newTurn);
@@ -79,7 +80,7 @@ function App() {
     };
   }, [onGameState, onAssignTeam]);
 
-  // Emit updated game state to server
+  // Emit game state with latest turnRef.current to avoid stale turn values
   const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
     socket.emit('updateGame', {
       characters: updatedChars,
@@ -88,7 +89,6 @@ function App() {
     });
   };
 
-  // Select only own alive characters on your turn
   const handleTileClick = (char) => {
     if (!char) return;
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
@@ -96,7 +96,6 @@ function App() {
     }
   };
 
-  // Move character if valid move (bounds, free tile, moves left)
   const moveCharacter = (id, dx, dy) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
 
@@ -120,7 +119,6 @@ function App() {
     emitGameState(newCharacters);
   };
 
-  // Attack adjacent enemy if hasn't attacked yet
   const attack = (attackerId) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
 
@@ -151,45 +149,36 @@ function App() {
     }
   };
 
-  // End turn: reset moves and attacks for next team, check winner
   const endTurn = () => {
-  if (turn !== myTeam || winner !== null) return;
+    if (turn !== myTeam || winner !== null) return;
 
-  const nextTurn = turn === 'A' ? 'B' : 'A';
+    const nextTurn = turn === 'A' ? 'B' : 'A';
 
-  // Reset movesLeft and hasAttacked ONLY for nextTurn team
-  // Keep other characters exactly as is
-  const updatedChars = characters.map((c) => {
-    if (c.team === nextTurn) {
-      // Find base character for correct moveRange reset
-      const baseChar = baseCharacters.find((bc) => bc.name === c.name);
-      return {
-        ...c,
-        movesLeft: baseChar ? baseChar.moveRange : c.movesLeft,
-        hasAttacked: false,
-      };
-    } else {
-      return { ...c };
-    }
-  });
+    const updatedChars = characters.map((c) => {
+      if (c.team === nextTurn) {
+        const baseChar = baseCharacters.find((bc) => bc.name === c.name);
+        return {
+          ...c,
+          movesLeft: baseChar ? baseChar.moveRange : c.movesLeft,
+          hasAttacked: false,
+        };
+      } else {
+        return { ...c };
+      }
+    });
 
-  // Check for alive characters on each team to determine winner
-  const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
-  const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
-  const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
+    const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
+    const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
+    const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
 
-  // Update local state before emitting
-  setCharacters(updatedChars);
-  setTurn(nextTurn);
-  setWinner(newWinner);
-  setSelectedId(null);
+    setCharacters(updatedChars);
+    setTurn(nextTurn);
+    setWinner(newWinner);
+    setSelectedId(null);
 
-  // Emit full updated game state to server
-  emitGameState(updatedChars, nextTurn, newWinner);
-};
+    emitGameState(updatedChars, nextTurn, newWinner);
+  };
 
-
-  // Surrender: immediately lose and notify opponent
   const surrender = () => {
     if (!myTeam) return;
     const opponent = myTeam === 'A' ? 'B' : 'A';
@@ -211,9 +200,7 @@ function App() {
               return (
                 <div
                   key={x}
-                  className={`tile ${char ? 'occupied' : ''} ${
-                    selectedId === char?.id ? 'selected' : ''
-                  }`}
+                  className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
                   onClick={() => handleTileClick(char)}
                   role="button"
                   tabIndex={0}
@@ -249,36 +236,36 @@ function App() {
           <>
             <button
               onClick={() => moveCharacter(selectedId, -1, 0)}
-              disabled={selectedChar.movesLeft === 0}
-              aria-disabled={selectedChar.movesLeft === 0}
+              disabled={selectedChar.movesLeft <= 0}
+              aria-label="Move left"
             >
-              Move Left
+              ←
             </button>
             <button
               onClick={() => moveCharacter(selectedId, 1, 0)}
-              disabled={selectedChar.movesLeft === 0}
-              aria-disabled={selectedChar.movesLeft === 0}
+              disabled={selectedChar.movesLeft <= 0}
+              aria-label="Move right"
             >
-              Move Right
+              →
             </button>
             <button
               onClick={() => moveCharacter(selectedId, 0, -1)}
-              disabled={selectedChar.movesLeft === 0}
-              aria-disabled={selectedChar.movesLeft === 0}
+              disabled={selectedChar.movesLeft <= 0}
+              aria-label="Move up"
             >
-              Move Up
+              ↑
             </button>
             <button
               onClick={() => moveCharacter(selectedId, 0, 1)}
-              disabled={selectedChar.movesLeft === 0}
-              aria-disabled={selectedChar.movesLeft === 0}
+              disabled={selectedChar.movesLeft <= 0}
+              aria-label="Move down"
             >
-              Move Down
+              ↓
             </button>
             <button
               onClick={() => attack(selectedId)}
               disabled={selectedChar.hasAttacked}
-              aria-disabled={selectedChar.hasAttacked}
+              aria-label="Attack"
             >
               Attack
             </button>
@@ -287,19 +274,19 @@ function App() {
       </div>
 
       <div className="turn-controls">
-        <button onClick={endTurn} disabled={turn !== myTeam || winner !== null}>
-          End Turn
-        </button>
-        <button onClick={surrender} disabled={winner !== null}>
-          Surrender
-        </button>
+        {turn === myTeam && !winner && (
+          <button onClick={endTurn} aria-label="End turn">
+            End Turn
+          </button>
+        )}
+        {!winner && myTeam && (
+          <button onClick={surrender} aria-label="Surrender">
+            Surrender
+          </button>
+        )}
       </div>
 
-      {winner && (
-        <div className="winner-message" role="alert" aria-live="assertive">
-          {winner === myTeam ? 'You win!' : 'You lose!'}
-        </div>
-      )}
+      {winner && <h2>Team {winner} wins!</h2>}
     </div>
   );
 }
