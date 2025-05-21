@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import knightSprite from './sprites/knight.png';
 import archerSprite from './sprites/archer.png';
 import mageSprite from './sprites/mage.png';
@@ -56,24 +56,28 @@ function App() {
 
   const selectedChar = characters.find((c) => c.id === selectedId);
 
+  // Memoize handlers so they have stable references
+  const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
+    setCharacters(newChars);
+    setTurn(newTurn);
+    setWinner(newWinner);
+    setSelectedId(null);
+  }, []);
+
+  const onAssignTeam = useCallback((team) => {
+    setMyTeam(team);
+    console.log('Assigned team:', team);
+  }, []);
+
   useEffect(() => {
-  if (!socket) return;
+    socket.on('gameState', onGameState);
+    socket.on('assignTeam', onAssignTeam);
 
-  socket.on('gameState', onGameState);
-  socket.on('assignTeam', onAssignTeam);
-  socket.on('turnChanged', (newTurnTeam) => {
-    console.log('📣 Received turnChanged:', newTurnTeam);
-    setTurn(newTurnTeam);
-    setWaitingForOpponent(newTurnTeam !== myTeam);
-  });
-
-  return () => {
-    socket.off('gameState', onGameState);
-    socket.off('assignTeam', onAssignTeam);
-    socket.off('turnChanged');
-  };
-}, [socket, myTeam]);
-
+    return () => {
+      socket.off('gameState', onGameState);
+      socket.off('assignTeam', onAssignTeam);
+    };
+  }, [onGameState, onAssignTeam]);
 
   // Emit updated game state to server
   const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
@@ -256,26 +260,31 @@ function App() {
             >
               Move Down
             </button>
-            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked} aria-disabled={selectedChar.hasAttacked}>
+            <button
+              onClick={() => attack(selectedId)}
+              disabled={selectedChar.hasAttacked}
+              aria-disabled={selectedChar.hasAttacked}
+            >
               Attack
             </button>
           </>
         )}
-
-        {!winner && (
-          <button onClick={endTurn} disabled={turn !== myTeam} aria-disabled={turn !== myTeam}>
-            End Turn
-          </button>
-        )}
-
-        {!winner && (
-          <button onClick={surrender} disabled={!myTeam} aria-disabled={!myTeam}>
-            Surrender
-          </button>
-        )}
-
-        {winner && <h2>Team {winner} wins!</h2>}
       </div>
+
+      <div className="turn-controls">
+        <button onClick={endTurn} disabled={turn !== myTeam || winner !== null}>
+          End Turn
+        </button>
+        <button onClick={surrender} disabled={winner !== null}>
+          Surrender
+        </button>
+      </div>
+
+      {winner && (
+        <div className="winner-message" role="alert" aria-live="assertive">
+          {winner === myTeam ? 'You win!' : 'You lose!'}
+        </div>
+      )}
     </div>
   );
 }
