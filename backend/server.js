@@ -264,7 +264,58 @@ io.on('connection', (socket) => {
       socket.emit('gameState', room.gameState); // revert to current valid state
     }
   });
+socket.on('endTurn', () => {
+  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+  if (!playerRoomId) {
+    console.log(`endTurn: No room found for socket ${socket.id}`);
+    return;
+  }
+  const room = rooms[playerRoomId];
+  const playerTeam = room.players[socket.id];
+  if (!playerTeam) {
+    console.log(`endTurn: Player team not found for socket ${socket.id}`);
+    return;
+  }
 
+  // Check if it's this player's turn
+  if (room.gameState.turn !== playerTeam) {
+    console.log(`endTurn: Not player ${playerTeam}'s turn`);
+    return;
+  }
+
+  if (room.gameState.winner !== null) {
+    console.log(`endTurn: Game already won by ${room.gameState.winner}`);
+    return;
+  }
+
+  // Switch turn to the other player
+  const nextTurn = playerTeam === 'A' ? 'B' : 'A';
+
+  // Reset movesLeft and hasAttacked for all characters of nextTurn
+  const newCharacters = room.gameState.characters.map(char => {
+    if (char.team === nextTurn) {
+      const baseChar = baseCharacters.find(bc => bc.name === char.name);
+      return {
+        ...char,
+        movesLeft: baseChar ? baseChar.moveRange : char.movesLeft,
+        hasAttacked: false,
+      };
+    }
+    return char;
+  });
+
+  // Update room gameState
+  room.gameState = {
+    characters: newCharacters,
+    turn: nextTurn,
+    winner: null, // keep current winner if needed; your validation handles that
+  };
+
+  console.log(`Turn ended by player ${playerTeam}. Now it is ${nextTurn}'s turn.`);
+
+  // Emit updated gameState to all players in the room
+  io.to(playerRoomId).emit('gameState', room.gameState);
+});
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
 
