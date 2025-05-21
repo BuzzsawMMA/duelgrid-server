@@ -57,27 +57,23 @@ function App() {
   const selectedChar = characters.find((c) => c.id === selectedId);
 
   useEffect(() => {
-    // Setup socket listeners once on mount
-    const onGameState = ({ characters: newChars, turn: newTurn, winner: newWinner }) => {
-      setCharacters(newChars);
-      setTurn(newTurn);
-      setWinner(newWinner);
-      setSelectedId(null);
-    };
+  if (!socket || !gameId) return;
 
-    const onAssignTeam = (team) => {
-      setMyTeam(team);
-      console.log('Assigned team:', team);
-    };
+  socket.on('gameState', onGameState);
+  socket.on('assignTeam', onAssignTeam);
+  socket.on('turnChanged', (newTurnTeam) => {
+    console.log('📣 Received turnChanged:', newTurnTeam);
+    setTurn(newTurnTeam);
+    setWaitingForOpponent(newTurnTeam !== myTeam);
+  });
 
-    socket.on('gameState', onGameState);
-    socket.on('assignTeam', onAssignTeam);
+  return () => {
+    socket.off('gameState', onGameState);
+    socket.off('assignTeam', onAssignTeam);
+    socket.off('turnChanged');
+  };
+}, [socket, gameId, myTeam]);
 
-    return () => {
-      socket.off('gameState', onGameState);
-      socket.off('assignTeam', onAssignTeam);
-    };
-  }, []);
 
   // Emit updated game state to server
   const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
