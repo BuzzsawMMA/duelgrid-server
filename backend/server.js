@@ -187,11 +187,7 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
   if (!aliveA) winner = 'B';
   if (!aliveB) winner = 'A';
 
-  room.gameState = {
-    characters: newState.characters,
-    turn: newState.turn,
-    winner,
-  };
+  // **Do NOT update room.gameState here! Only validate!**
 
   console.log('Validation succeeded for player', playerTeam);
   return true;
@@ -258,92 +254,125 @@ io.on('connection', (socket) => {
 
     console.log(`Player ${playerTeam} (${socket.id}) sent updateGame. Valid: ${valid}. New turn: ${newState.turn}`);
 
-    if (valid) {
-      io.to(playerRoomId).emit('gameState', room.gameState);
-    } else {
-      socket.emit('gameState', room.gameState); // revert to current valid state
+    if (!valid) {
+      socket.emit('invalidUpdate', 'Invalid game state update');
+      return;
     }
+
+    // Update game state properly after validation
+    // Preserve existing winner if set, otherwise compute
+    const aliveA = newState.characters.some(c => c.team === 'A' && c.hp > 0);
+    const aliveB = newState.characters.some(c => c.team === 'B' && c.hp > 0);
+    let winner = null;
+    if (!aliveA) winner = 'B';
+    else if (!aliveB) winner = 'A';
+
+    room.gameState = {
+      ...newState,
+      winner,
+    };
+
+    io.to(playerRoomId).emit('gameState', room.gameState);
   });
+
   socket.on('endTurn', () => {
-  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-  if (!playerRoomId) {
-    console.log(`endTurn: No room found for socket ${socket.id}`);
-    return;
-  }
-  const room = rooms[playerRoomId];
-  const playerTeam = room.players[socket.id];
-  if (!playerTeam) {
-    console.log(`endTurn: Player team not found for socket ${socket.id}`);
-    return;
-  }
-
-  // Check if it's this player's turn
-  if (room.gameState.turn !== playerTeam) {
-    console.log(`endTurn: Not player ${playerTeam}'s turn`);
-    return;
-  }
-
-  if (room.gameState.winner !== null) {
-    console.log(`endTurn: Game already won by ${room.gameState.winner}`);
-    return;
-  }
-
-  // Switch turn to the other player
-  const nextTurn = playerTeam === 'A' ? 'B' : 'A';
-
-  // Reset movesLeft and hasAttacked for all characters of nextTurn
-  const newCharacters = room.gameState.characters.map(char => {
-    if (char.team === nextTurn) {
-      const baseChar = baseCharacters.find(bc => bc.name === char.name);
-      return {
-        ...char,
-        movesLeft: baseChar ? baseChar.moveRange : char.movesLeft,
-        hasAttacked: false,
-      };
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) {
+      console.log(`endTurn: No room found for socket ${socket.id}`);
+      return;
     }
-    return char;
+    const room = rooms[playerRoomId];
+    const playerTeam = room.players[socket.id];
+    if (!playerTeam) {
+      console.log(`endTurn: Player team not found for socket ${socket.id}`);
+      return;
+    }
+    if (playerTeam !== room.gameState.turn) {
+      console.log(`endTurn: Not player ${playerTeam}'s turn`);
+      return;
+    }
+    if (room.gameState.winner) {
+      console.log('endTurn: Game already ended');
+      return;
+    }
+
+    const nextTurn = playerTeam === 'A' ? 'B' : 'A';
+
+    const newCharacters = room.gameState.characters.map(c => {
+      if (c.hp <= 0) return c;
+      if (c.team === nextTurn) {
+        const baseChar = baseCharacters.find(bc => bc.name === c.name);
+        return {
+          ...c,
+          movesLeft: baseChar.moveRange,
+          hasAttacked: false,
+        };
+      } else {
+        return c;
+      }
+    });
+
+    room.gameState = {
+      ...room.gameState,
+      turn: nextTurn,
+      characters: newCharacters,
+      // Do not reset winner here, keep it if set
+    };
+
+    io.to(playerRoomId).emit('gameState', room.gameState);
+    console.log(`Turn ended by player ${playerTeam}. Next turn: ${nextTurn}`);
   });
 
-  // Update room gameState
-  room.gameState = {
-    characters: newCharacters,
-    turn: nextTurn,
-    winner: null, // keep current winner if needed; your validation handles that
-  };
+  socket.on('surrender', () => {
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) {
+      console.log(`surrender: No room found for socket ${socket.id}`);
+      return;
+    }
+    const room = rooms[playerRoomId];
+    const playerTeam = room.players[socket.id];
+    if (!playerTeam) {
+      console.log(`surrender: Player team not found for socket ${socket.id}`);
+      return;
+    }
+    if (room.gameState.winner) {
+      console.log('surrender: Game already ended');
+      return;
+    }
+    const winner = playerTeam === 'A' ? 'B' : 'A';
 
-  console.log(`Turn ended by player ${playerTeam}. Now it is ${nextTurn}'s turn.`);
+    room.gameState = {
+      ...room.gameState,
+      winner,
+    };
 
-  // Emit updated gameState to all players in the room
-  io.to(playerRoomId).emit('gameState', room.gameState);
-});
+    io.to(playerRoomId).emit('gameState', room.gameState);
+    console.log(`Player ${playerTeam} surrendered. Winner is ${winner}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-
     // Remove from waiting queue if present
-    const idx = waitingQueue.indexOf(socket.id);
-    if (idx !== -1) {
-      waitingQueue.splice(idx, 1);
-      console.log('Removed from waiting queue:', socket.id);
-    }
+    const index = waitingQueue.indexOf(socket.id);
+    if (index !== -1) waitingQueue.splice(index, 1);
 
-    // Find room and remove player
+    // Find and clean up player's room
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
     if (playerRoomId) {
       const room = rooms[playerRoomId];
       delete room.players[socket.id];
       io.to(playerRoomId).emit('playerLeft', socket.id);
-      console.log(`Player ${socket.id} left room ${playerRoomId}`);
 
       // If no players left, delete room
       if (Object.keys(room.players).length === 0) {
         delete rooms[playerRoomId];
-        console.log(`Room ${playerRoomId} deleted due to no players`);
+        console.log(`Room ${playerRoomId} deleted because no players left.`);
       }
     }
   });
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
