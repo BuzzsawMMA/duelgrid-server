@@ -72,7 +72,7 @@ function App() {
     socket.off('assignTeam', onAssignTeam);
     socket.off('turnChanged');
   };
-}, [socket, gameId, myTeam]);
+}, [socket, myTeam]);
 
 
   // Emit updated game state to server
