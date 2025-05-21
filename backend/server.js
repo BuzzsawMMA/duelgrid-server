@@ -264,7 +264,7 @@ io.on('connection', (socket) => {
       socket.emit('gameState', room.gameState); // revert to current valid state
     }
   });
-socket.on('endTurn', () => {
+  socket.on('endTurn', () => {
   const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
   if (!playerRoomId) {
     console.log(`endTurn: No room found for socket ${socket.id}`);
