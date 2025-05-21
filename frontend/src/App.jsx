@@ -57,7 +57,7 @@ function App() {
   const selectedChar = characters.find((c) => c.id === selectedId);
 
   useEffect(() => {
-  if (!socket || !gameId) return;
+  if (!socket) return;
 
   socket.on('gameState', onGameState);
   socket.on('assignTeam', onAssignTeam);
