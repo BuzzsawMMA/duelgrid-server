@@ -10,7 +10,6 @@ import summonerSprite from './sprites/summoner.png';
 import paladinSprite from './sprites/paladin.png';
 import './App.css';
 
-// ⚠️ Replace with your backend URL
 const socket = io('https://duelgrid-server.onrender.com', {
   transports: ['websocket'],
 });
@@ -49,15 +48,12 @@ function App() {
   const [turn, setTurn] = useState('A');
   const [winner, setWinner] = useState(null);
 
-  // Ref to keep latest turn value for use inside socket callbacks and emitters
   const turnRef = useRef(turn);
   useEffect(() => {
     turnRef.current = turn;
   }, [turn]);
 
-  const selectedChar = characters.find((c) => c.id === selectedId);
-
-  // onGameState uses setState hooks directly (no stale closure issues)
+  // Update game state from server
   const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
     setCharacters(newChars);
     setTurn(newTurn);
@@ -65,9 +61,9 @@ function App() {
     setSelectedId(null);
   }, []);
 
+  // Receive assigned team
   const onAssignTeam = useCallback((team) => {
     setMyTeam(team);
-    console.log('Assigned team:', team);
   }, []);
 
   useEffect(() => {
@@ -80,15 +76,21 @@ function App() {
     };
   }, [onGameState, onAssignTeam]);
 
-  // Emit game state with latest turnRef.current to avoid stale turn values
-  const emitGameState = (updatedChars, nextTurn = turnRef.current, winnerCheck = null) => {
-    socket.emit('updateGame', {
-      characters: updatedChars,
-      turn: nextTurn,
-      winner: winnerCheck,
-    });
-  };
+  // Emit updated characters, but DO NOT change turn on client
+  const emitGameState = useCallback(
+    (updatedChars) => {
+      socket.emit('updateGame', {
+        characters: updatedChars,
+        turn: turnRef.current, // Send current turn, server decides if valid
+        winner: winner,
+      });
+    },
+    [winner]
+  );
 
+  const selectedChar = characters.find((c) => c.id === selectedId);
+
+  // Clicking a tile selects your character only if it's your turn
   const handleTileClick = (char) => {
     if (!char) return;
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
@@ -96,94 +98,77 @@ function App() {
     }
   };
 
+  // Move character ONLY if movesLeft > 0 and turn matches
   const moveCharacter = (id, dx, dy) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+    if (selectedChar.movesLeft <= 0) return;
 
-    const newCharacters = characters.map((c) => {
-      if (c.id === id && c.team === myTeam && c.movesLeft > 0) {
-        const newX = Math.max(0, Math.min(gridSize - 1, c.x + dx));
-        const newY = Math.max(0, Math.min(gridSize - 1, c.y + dy));
+    const newX = Math.max(0, Math.min(gridSize - 1, selectedChar.x + dx));
+    const newY = Math.max(0, Math.min(gridSize - 1, selectedChar.y + dy));
 
-        const isOccupied = characters.some(
-          (other) => other.id !== c.id && other.x === newX && other.y === newY && other.hp > 0
-        );
+    // Check if target tile is occupied by a living character
+    const isOccupied = characters.some(
+      (c) => c.id !== id && c.x === newX && c.y === newY && c.hp > 0
+    );
+    if (isOccupied) return;
 
-        if (!isOccupied) {
-          return { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 };
-        }
+    const updatedChars = characters.map((c) =>
+      c.id === id
+        ? { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 }
+        : c
+    );
+
+    setCharacters(updatedChars);
+    emitGameState(updatedChars);
+  };
+
+  // Attack only if has not attacked yet, it's your turn, and attacker belongs to your team
+  const attack = (attackerId) => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+    if (selectedChar.hasAttacked) return;
+
+    const attacker = characters.find((c) => c.id === attackerId);
+    if (!attacker) return;
+
+    // Find adjacent enemies
+    const targets = characters.filter(
+      (c) =>
+        c.team !== attacker.team &&
+        c.hp > 0 &&
+        Math.abs(c.x - attacker.x) + Math.abs(c.y - attacker.y) === 1
+    );
+
+    if (targets.length === 0) return;
+
+    const target = targets[0];
+
+    const updatedChars = characters.map((c) => {
+      if (c.id === target.id) {
+        return { ...c, hp: Math.max(0, c.hp - attacker.atk) };
+      }
+      if (c.id === attacker.id) {
+        return { ...c, hasAttacked: true };
       }
       return c;
     });
 
-    setCharacters(newCharacters);
-    emitGameState(newCharacters);
+    setCharacters(updatedChars);
+    emitGameState(updatedChars);
   };
 
-  const attack = (attackerId) => {
-    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
-
-    const attacker = characters.find((c) => c.id === attackerId);
-    if (!attacker || attacker.hasAttacked) return;
-
-    const targets = characters.filter(
-      (c) =>
-        c.team !== attacker.team &&
-        Math.abs(c.x - attacker.x) + Math.abs(c.y - attacker.y) === 1 &&
-        c.hp > 0
-    );
-
-    if (targets.length > 0) {
-      const target = targets[0]; // attack first adjacent enemy found
-      const updatedChars = characters.map((c) => {
-        if (c.id === target.id) {
-          return { ...c, hp: Math.max(0, c.hp - attacker.atk) };
-        }
-        if (c.id === attacker.id) {
-          return { ...c, hasAttacked: true };
-        }
-        return c;
-      });
-
-      setCharacters(updatedChars);
-      emitGameState(updatedChars);
-    }
-  };
-
+  // End turn by telling server, which resets movesLeft, hasAttacked and switches turn
   const endTurn = () => {
     if (turn !== myTeam || winner !== null) return;
-
-    const nextTurn = turn === 'A' ? 'B' : 'A';
-
-    const updatedChars = characters.map((c) => {
-      if (c.team === nextTurn) {
-        const baseChar = baseCharacters.find((bc) => bc.name === c.name);
-        return {
-          ...c,
-          movesLeft: baseChar ? baseChar.moveRange : c.movesLeft,
-          hasAttacked: false,
-        };
-      } else {
-        return { ...c };
-      }
-    });
-
-    const aliveA = updatedChars.some((c) => c.team === 'A' && c.hp > 0);
-    const aliveB = updatedChars.some((c) => c.team === 'B' && c.hp > 0);
-    const newWinner = !aliveA ? 'B' : !aliveB ? 'A' : null;
-
-    setCharacters(updatedChars);
-    setTurn(nextTurn);
-    setWinner(newWinner);
+    socket.emit('endTurn');
     setSelectedId(null);
-
-    emitGameState(updatedChars, nextTurn, newWinner);
   };
 
+  // Surrender immediately sets winner to opponent and informs server
   const surrender = () => {
     if (!myTeam) return;
     const opponent = myTeam === 'A' ? 'B' : 'A';
     setWinner(opponent);
-    emitGameState(characters, turnRef.current, opponent);
+    socket.emit('surrender', { winner: opponent });
   };
 
   return (
