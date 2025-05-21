@@ -44,7 +44,6 @@ const areAdjacent = (a, b) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
-  // (your validation logic stays the same)
   if (!newState || !newState.characters || !newState.turn) return false;
   if (playerTeam !== room.gameState.turn) return false;
 
@@ -148,7 +147,7 @@ io.on('connection', (socket) => {
         winner: null,
       },
       players: {},
-      waitingTeam: null, // Not needed now
+      waitingTeam: null,
     };
 
     const room = rooms[newRoomId];
@@ -177,7 +176,6 @@ io.on('connection', (socket) => {
 
   // Handle game updates from any socket
   socket.on('updateGame', (newState) => {
-    // Find the room this socket belongs to
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
     if (!playerRoomId) return;
 
@@ -186,10 +184,14 @@ io.on('connection', (socket) => {
     if (!playerTeam) return;
 
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
+
+    console.log(`Player ${playerTeam} (${socket.id}) sent updateGame. Valid: ${valid}. New turn: ${newState.turn}`);
+
     if (valid) {
       io.to(playerRoomId).emit('gameState', room.gameState);
     } else {
       socket.emit('errorMessage', 'Invalid game update.');
+      console.log('Invalid game update from player:', socket.id, newState);
     }
   });
 
