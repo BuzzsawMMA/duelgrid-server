@@ -38,35 +38,65 @@ const generateTeam = (team, row) =>
 const rooms = {};
 let roomCounter = 1;
 
-const waitingQueue = [];  // <-- New queue to hold waiting players
+const waitingQueue = [];  // Queue to hold waiting players
 
 const areAdjacent = (a, b) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
-  if (!newState || !newState.characters || !newState.turn) return false;
-  if (playerTeam !== room.gameState.turn) return false;
+  if (!newState || !newState.characters || !newState.turn) {
+    console.log('Validation failed: newState or required fields missing');
+    return false;
+  }
+  if (playerTeam !== room.gameState.turn) {
+    console.log(`Validation failed: Not player ${playerTeam}'s turn, current turn is ${room.gameState.turn}`);
+    return false;
+  }
 
   const oldChars = room.gameState.characters;
   const newChars = newState.characters;
 
   for (let newChar of newChars) {
     const oldChar = oldChars.find((c) => c.id === newChar.id);
-    if (!oldChar) return false;
+    if (!oldChar) {
+      console.log(`Validation failed: Character ID ${newChar.id} not found`);
+      return false;
+    }
 
-    if (newChar.team !== oldChar.team) return false;
-    if (newChar.hp > oldChar.hp) return false;
-    if (newChar.movesLeft > oldChar.movesLeft) return false;
+    if (newChar.team !== oldChar.team) {
+      console.log('Validation failed: Character team mismatch');
+      return false;
+    }
+    if (newChar.hp > oldChar.hp) {
+      console.log('Validation failed: HP increased');
+      return false;
+    }
+    if (newChar.movesLeft > oldChar.movesLeft) {
+      console.log('Validation failed: movesLeft increased');
+      return false;
+    }
 
     const distMoved = Math.abs(newChar.x - oldChar.x) + Math.abs(newChar.y - oldChar.y);
-    if (distMoved > oldChar.movesLeft) return false;
-    if (newChar.movesLeft !== oldChar.movesLeft - distMoved) return false;
+    if (distMoved > oldChar.movesLeft) {
+      console.log('Validation failed: Character moved too far');
+      return false;
+    }
+    if (newChar.movesLeft !== oldChar.movesLeft - distMoved) {
+      console.log('Validation failed: movesLeft not decreased correctly');
+      return false;
+    }
 
-    if (oldChar.hasAttacked && !newChar.hasAttacked) return false;
+    if (oldChar.hasAttacked && !newChar.hasAttacked) {
+      console.log('Validation failed: Attack status reverted');
+      return false;
+    }
   }
 
   const positions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
-  if (new Set(positions).size !== positions.length) return false;
+  if (new Set(positions).size !== positions.length) {
+    console.log('Validation failed: Two characters occupy the same position');
+    return false;
+  }
 
   const attackers = newChars.filter((nc) => {
     const oc = oldChars.find(c => c.id === nc.id);
@@ -87,36 +117,66 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
         break;
       }
     }
-    if (!attackedEnemyFound) return false;
+    if (!attackedEnemyFound) {
+      console.log('Validation failed: No valid enemy attacked');
+      return false;
+    }
   }
 
   const turnChanged = newState.turn !== room.gameState.turn;
   if (turnChanged) {
-    if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) return false;
+    if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) {
+      console.log('Validation failed: Turn changed incorrectly');
+      return false;
+    }
 
     for (const c of newState.characters) {
-  const oldC = oldChars.find(oc => oc.id === c.id);
-  if (!oldC) return false;
+      const oldC = oldChars.find(oc => oc.id === c.id);
+      if (!oldC) {
+        console.log('Validation failed: Character missing during turn change');
+        return false;
+      }
 
-  if (c.team === newState.turn) {
-    // This is the NEW player's team — should be RESET
-    const baseChar = baseCharacters.find(bc => bc.name === c.name);
-    if (!baseChar) return false;
-    if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) return false;
-  } else {
-    // This is the old player's team — their state should not "improve"
-    if (c.movesLeft > oldC.movesLeft) return false;
-    if (oldC.hasAttacked && !c.hasAttacked) return false;
-  }
-}
+      if (c.team === newState.turn) {
+        // New player team should reset moves and attack status
+        const baseChar = baseCharacters.find(bc => bc.name === c.name);
+        if (!baseChar) {
+          console.log('Validation failed: Base character not found');
+          return false;
+        }
+        if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) {
+          console.log('Validation failed: New turn characters not reset properly');
+          return false;
+        }
+      } else {
+        // Old player team state should not improve
+        if (c.movesLeft > oldC.movesLeft) {
+          console.log('Validation failed: Old team movesLeft increased');
+          return false;
+        }
+        if (oldC.hasAttacked && !c.hasAttacked) {
+          console.log('Validation failed: Old team attack status reverted');
+          return false;
+        }
+      }
+    }
 
   } else {
     for (const c of newState.characters) {
       const oldC = oldChars.find(oc => oc.id === c.id);
-      if (!oldC) return false;
+      if (!oldC) {
+        console.log('Validation failed: Character missing');
+        return false;
+      }
       if (c.team === room.gameState.turn) {
-        if (c.movesLeft > oldC.movesLeft) return false;
-        if (oldC.hasAttacked && !c.hasAttacked) return false;
+        if (c.movesLeft > oldC.movesLeft) {
+          console.log('Validation failed: movesLeft increased mid-turn');
+          return false;
+        }
+        if (oldC.hasAttacked && !c.hasAttacked) {
+          console.log('Validation failed: Attack status reverted mid-turn');
+          return false;
+        }
       }
     }
   }
@@ -133,17 +193,17 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     winner,
   };
 
+  console.log('Validation succeeded for player', playerTeam);
   return true;
 }
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Add the new player to the waiting queue
+  // Add player to waiting queue
   waitingQueue.push(socket.id);
   console.log('Waiting queue:', waitingQueue);
 
-  // If there are 2 players, create a new room and assign teams
   if (waitingQueue.length >= 2) {
     const playerA = waitingQueue.shift();
     const playerB = waitingQueue.shift();
@@ -161,15 +221,13 @@ io.on('connection', (socket) => {
 
     const room = rooms[newRoomId];
 
-    // Assign players to teams
+    // Assign teams
     room.players[playerA] = 'A';
     room.players[playerB] = 'B';
 
-    // Join players to room
     io.sockets.sockets.get(playerA)?.join(newRoomId);
     io.sockets.sockets.get(playerB)?.join(newRoomId);
 
-    // Inform players of their team and initial game state
     io.to(playerA).emit('assignTeam', 'A');
     io.to(playerB).emit('assignTeam', 'B');
 
@@ -179,18 +237,22 @@ io.on('connection', (socket) => {
 
     console.log(`Room ${newRoomId} created with players ${playerA} (A) and ${playerB} (B)`);
   } else {
-    // Notify the player they are waiting for an opponent
     socket.emit('waitingForOpponent');
   }
 
-  // Handle game updates from any socket
   socket.on('updateGame', (newState) => {
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (!playerRoomId) return;
+    if (!playerRoomId) {
+      console.log(`updateGame: No room found for socket ${socket.id}`);
+      return;
+    }
 
     const room = rooms[playerRoomId];
     const playerTeam = room.players[socket.id];
-    if (!playerTeam) return;
+    if (!playerTeam) {
+      console.log(`updateGame: Player team not found for socket ${socket.id}`);
+      return;
+    }
 
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
 
@@ -199,45 +261,38 @@ io.on('connection', (socket) => {
     if (valid) {
       io.to(playerRoomId).emit('gameState', room.gameState);
     } else {
-      socket.emit('errorMessage', 'Invalid game update.');
-      console.log('Invalid game update from player:', socket.id, newState);
+      socket.emit('gameState', room.gameState); // revert to current valid state
     }
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
 
-    // Remove from waiting queue if waiting
-    const waitingIndex = waitingQueue.indexOf(socket.id);
-    if (waitingIndex !== -1) {
-      waitingQueue.splice(waitingIndex, 1);
-      console.log(`Removed ${socket.id} from waiting queue`);
-      return;
+    // Remove from waiting queue if present
+    const idx = waitingQueue.indexOf(socket.id);
+    if (idx !== -1) {
+      waitingQueue.splice(idx, 1);
+      console.log('Removed from waiting queue:', socket.id);
     }
 
-    // Find the room this socket belongs to
+    // Find room and remove player
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (!playerRoomId) return;
+    if (playerRoomId) {
+      const room = rooms[playerRoomId];
+      delete room.players[socket.id];
+      io.to(playerRoomId).emit('playerLeft', socket.id);
+      console.log(`Player ${socket.id} left room ${playerRoomId}`);
 
-    const room = rooms[playerRoomId];
-    const playerTeam = room.players[socket.id];
-    if (playerTeam) {
-      const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
-      room.gameState.winner = opponentTeam;
-      io.to(playerRoomId).emit('gameState', room.gameState);
-    }
-
-    delete room.players[socket.id];
-    io.to(playerRoomId).emit('playerLeft', socket.id);
-
-    if (Object.keys(room.players).length === 0) {
-      delete rooms[playerRoomId];
-      console.log(`Room ${playerRoomId} deleted because empty`);
+      // If no players left, delete room
+      if (Object.keys(room.players).length === 0) {
+        delete rooms[playerRoomId];
+        console.log(`Room ${playerRoomId} deleted due to no players`);
+      }
     }
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`Socket.IO server running on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
