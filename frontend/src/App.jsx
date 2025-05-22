@@ -161,25 +161,7 @@ function App() {
   const endTurn = () => {
   if (turn !== myTeam || winner !== null) return;
 
-  const nextTurn = myTeam === 'A' ? 'B' : 'A';
-
-  const newState = {
-    turn: nextTurn,
-    characters: characters.map(c => {
-      if (c.team === nextTurn) {
-        const base = baseCharacters.find(b => b.name === c.name);
-        return {
-          ...c,
-          movesLeft: base?.moveRange || 0,
-          hasAttacked: false,
-        };
-      }
-      return c;
-    }),
-    winner: winner,
-  };
-
-  socket.emit('updateGame', newState);
+  socket.emit('endTurn');  // Just notify the server you want to end your turn
   setSelectedId(null);
 };
 

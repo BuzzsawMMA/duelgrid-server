@@ -206,6 +206,50 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  socket.on('endTurn', () => {
+  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+  if (!playerRoomId) {
+    console.log(`endTurn: No room found for socket ${socket.id}`);
+    return;
+  }
+
+  const room = rooms[playerRoomId];
+  const playerTeam = room.players[socket.id];
+
+  if (room.gameState.turn !== playerTeam) {
+    console.log(`endTurn: Not player ${playerTeam}'s turn`);
+    socket.emit('invalidUpdate', 'It is not your turn.');
+    return;
+  }
+
+  // Switch turn
+  const newTurn = playerTeam === 'A' ? 'B' : 'A';
+
+  // Reset movesLeft and hasAttacked for new turn characters
+  const updatedCharacters = room.gameState.characters.map((char) => {
+    if (char.team === newTurn) {
+      const baseChar = BASE_CHARACTERS.find(bc => bc.name === char.name);
+      return {
+        ...char,
+        movesLeft: baseChar.moveRange,
+        hasAttacked: false,
+      };
+    }
+    // Keep old team characters as-is
+    return char;
+  });
+
+  room.gameState = {
+    characters: updatedCharacters,
+    turn: newTurn,
+    winner: room.gameState.winner,
+  };
+
+  console.log(`Player ${playerTeam} ended turn. Now it's ${newTurn}'s turn.`);
+
+  io.to(playerRoomId).emit('gameState', room.gameState);
+});
+
   // Add player to waiting queue
   waitingQueue.push(socket.id);
   console.log('Waiting queue:', waitingQueue);
