@@ -225,6 +225,40 @@ io.on('connection', (socket) => {
     };
 
     const room = rooms[newRoomId];
+    // Inside io.on('connection', (socket) => { ... })
+
+socket.on('surrender', () => {
+  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+  if (!playerRoomId) {
+    console.log(`surrender: No room found for socket ${socket.id}`);
+    return;
+  }
+
+  const room = rooms[playerRoomId];
+  const surrenderingTeam = room.players[socket.id];
+  if (!surrenderingTeam) {
+    console.log(`surrender: Player team not found for socket ${socket.id}`);
+    return;
+  }
+
+  if (room.gameState.winner !== null) {
+    console.log(`surrender: Game already has a winner ${room.gameState.winner}`);
+    return;
+  }
+
+  const winner = surrenderingTeam === 'A' ? 'B' : 'A';
+
+  // Update the game state with the winner
+  room.gameState = {
+    ...room.gameState,
+    winner,
+  };
+
+  console.log(`Player ${surrenderingTeam} surrendered. Winner is ${winner}.`);
+
+  // Broadcast updated game state to the room so both players see it
+  io.to(playerRoomId).emit('gameState', room.gameState);
+});
 
     // Assign teams
     room.players[playerA] = 'A';
