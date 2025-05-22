@@ -194,9 +194,8 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
   const currentWinner = room.gameState.winner || winner;
 
   room.gameState = {
-  characters: newState.characters
-    .filter(c => c.hp > 0)
-    .map(c => ({ ...c })), // ensures we're not reusing any references from the frontend
+  characters: newState.characters.map(c => ({ ...c })),
+
   turn: newState.turn,
   winner: currentWinner,
 };
