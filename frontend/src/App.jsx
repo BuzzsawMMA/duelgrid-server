@@ -9,6 +9,7 @@ import rogueSprite from './sprites/rogue.png';
 import summonerSprite from './sprites/summoner.png';
 import paladinSprite from './sprites/paladin.png';
 import './App.css';
+import TutorialModal from './TutorialModal'; // adjust path if needed
 
 const socket = io('https://duelgrid-server.onrender.com', {
   transports: ['websocket'],
@@ -50,11 +51,9 @@ function App() {
 
   const turnRef = useRef(turn);
   useEffect(() => {
-  turnRef.current = turn;
-}, [turn]);
+    turnRef.current = turn;
+  }, [turn]);
 
-
-  // Update game state from server
   const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
     setCharacters(newChars);
     setTurn(newTurn);
@@ -62,7 +61,6 @@ function App() {
     setSelectedId(null);
   }, []);
 
-  // Receive assigned team
   const onAssignTeam = useCallback((team) => {
     setMyTeam(team);
   }, []);
@@ -77,12 +75,11 @@ function App() {
     };
   }, [onGameState, onAssignTeam]);
 
-  // Emit updated characters, but DO NOT change turn on client
   const emitGameState = useCallback(
     (updatedChars) => {
       socket.emit('updateGame', {
         characters: updatedChars,
-        turn: turnRef.current, // Send current turn, server decides if valid
+        turn: turnRef.current,
         winner: winner,
       });
     },
@@ -91,7 +88,6 @@ function App() {
 
   const selectedChar = characters.find((c) => c.id === selectedId);
 
-  // Clicking a tile selects your character only if it's your turn
   const handleTileClick = (char) => {
     if (!char) return;
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
@@ -99,7 +95,6 @@ function App() {
     }
   };
 
-  // Move character ONLY if movesLeft > 0 and turn matches
   const moveCharacter = (id, dx, dy) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
     if (selectedChar.movesLeft <= 0) return;
@@ -107,7 +102,6 @@ function App() {
     const newX = Math.max(0, Math.min(gridSize - 1, selectedChar.x + dx));
     const newY = Math.max(0, Math.min(gridSize - 1, selectedChar.y + dy));
 
-    // Check if target tile is occupied by a living character
     const isOccupied = characters.some(
       (c) => c.id !== id && c.x === newX && c.y === newY && c.hp > 0
     );
@@ -123,7 +117,6 @@ function App() {
     emitGameState(updatedChars);
   };
 
-  // Attack only if has not attacked yet, it's your turn, and attacker belongs to your team
   const attack = (attackerId) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
     if (selectedChar.hasAttacked) return;
@@ -131,7 +124,6 @@ function App() {
     const attacker = characters.find((c) => c.id === attackerId);
     if (!attacker) return;
 
-    // Find adjacent enemies
     const targets = characters.filter(
       (c) =>
         c.team !== attacker.team &&
@@ -157,15 +149,13 @@ function App() {
     emitGameState(updatedChars);
   };
 
-  // End turn by telling server, which resets movesLeft, hasAttacked and switches turn
   const endTurn = () => {
-  if (turn !== myTeam || winner !== null) return;
+    if (turn !== myTeam || winner !== null) return;
 
-  socket.emit('endTurn');  // Just notify the server you want to end your turn
-  setSelectedId(null);
-};
+    socket.emit('endTurn');
+    setSelectedId(null);
+  };
 
-  // Surrender immediately sets winner to opponent and informs server
   const surrender = () => {
     if (!myTeam) return;
     const opponent = myTeam === 'A' ? 'B' : 'A';
@@ -175,6 +165,9 @@ function App() {
 
   return (
     <div className="App">
+      {/* Tutorial modal inserted here */}
+      <TutorialModal />
+
       <h1>DuelGrid</h1>
       <h2>You are Team {myTeam || '...'}</h2>
       <h2>Turn: Team {turn}</h2>
@@ -273,7 +266,11 @@ function App() {
         )}
       </div>
 
-      {winner && <h2>Team {winner} wins!</h2>}
+      {winner && (
+        <div role="alert" className="winner-message">
+          Team {winner} wins!
+        </div>
+      )}
     </div>
   );
 }
