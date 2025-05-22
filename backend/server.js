@@ -112,13 +112,25 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 
     let validAttackFound = false;
     for (const oldEnemy of adjacentEnemiesOld) {
-      const newEnemy = newChars.find(c => c.id === oldEnemy.id);
-      const hpDiff = oldEnemy.hp - newEnemy.hp;
-      if (hpDiff === attacker.atk) {
-        validAttackFound = true;
-        break;
-      }
+  const newEnemy = newChars.find(c => c.id === oldEnemy.id);
+
+  // If the enemy was removed from newChars (i.e., killed)
+  if (!newEnemy) {
+    if (oldEnemy.hp <= attacker.atk) {
+      validAttackFound = true;
+      break;
+    } else {
+      continue;
     }
+  }
+
+  const hpDiff = oldEnemy.hp - newEnemy.hp;
+  if (hpDiff === attacker.atk || (oldEnemy.hp > 0 && newEnemy.hp <= 0 && oldEnemy.hp <= attacker.atk)) {
+    validAttackFound = true;
+    break;
+  }
+}
+
 
     if (!validAttackFound) {
       console.log('Validation failed: No valid enemy attacked');
