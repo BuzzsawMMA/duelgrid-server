@@ -158,10 +158,29 @@ function App() {
 
   // End turn by telling server, which resets movesLeft, hasAttacked and switches turn
   const endTurn = () => {
-    if (turn !== myTeam || winner !== null) return;
-    socket.emit('endTurn');
-    setSelectedId(null);
+  if (turn !== myTeam || winner !== null) return;
+
+  const nextTurn = myTeam === 'A' ? 'B' : 'A';
+
+  const newState = {
+    turn: nextTurn,
+    characters: characters.map(c => {
+      if (c.team === nextTurn) {
+        const base = BASE_CHARACTERS.find(b => b.name === c.name);
+        return {
+          ...c,
+          movesLeft: base?.moveRange || 0,
+          hasAttacked: false,
+        };
+      }
+      return c;
+    }),
   };
+
+  socket.emit('updateGame', newState);
+  setSelectedId(null);
+};
+
 
   // Surrender immediately sets winner to opponent and informs server
   const surrender = () => {
