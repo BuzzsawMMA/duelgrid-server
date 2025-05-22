@@ -229,14 +229,15 @@ io.on('connection', (socket) => {
 
   // Reset movesLeft and hasAttacked for new turn characters
   const updatedCharacters = room.gameState.characters.map((char) => {
-    if (char.team === newTurn) {
-      const baseChar = BASE_CHARACTERS.find(bc => bc.name === char.name);
-      return {
-        ...char,
-        movesLeft: baseChar.moveRange,
-        hasAttacked: false,
-      };
-    }
+    if (char.team === newTurn && char.hp > 0) {
+  const baseChar = BASE_CHARACTERS.find(bc => bc.name === char.name);
+  return {
+    ...char,
+    movesLeft: baseChar.moveRange,
+    hasAttacked: false,
+  };
+}
+
     // Keep old team characters as-is
     return char;
   });
