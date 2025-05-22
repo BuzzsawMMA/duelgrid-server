@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
-
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import knightSprite from './sprites/knight.png';
 import archerSprite from './sprites/archer.png';
 import mageSprite from './sprites/mage.png';
@@ -9,12 +8,14 @@ import warriorSprite from './sprites/warrior.png';
 import rogueSprite from './sprites/rogue.png';
 import summonerSprite from './sprites/summoner.png';
 import paladinSprite from './sprites/paladin.png';
-
 import './App.css';
+
+const socket = io('https://duelgrid-server.onrender.com', {
+  transports: ['websocket'],
+});
 
 const gridSize = 8;
 
-// Base characters template (sprites, stats, etc.)
 const baseCharacters = [
   { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: knightSprite },
   { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: archerSprite },
@@ -26,65 +27,110 @@ const baseCharacters = [
   { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: paladinSprite },
 ];
 
-// Initialize socket outside component to avoid reconnects
-const socket = io('https://duelgrid-server.onrender.com', {
-  transports: ['websocket'],
-});
+let idCounter = 1;
+const generateTeam = (team, row) =>
+  baseCharacters.map((c, i) => ({
+    ...c,
+    id: idCounter++,
+    x: i,
+    y: row,
+    team,
+    movesLeft: c.moveRange,
+    hasAttacked: false,
+  }));
+
+const initialCharacters = [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)];
 
 function App() {
   const [myTeam, setMyTeam] = useState(null);
-  const [characters, setCharacters] = useState([]);
-  const [turn, setTurn] = useState(null);
-  const [winner, setWinner] = useState(null);
+  const [characters, setCharacters] = useState(initialCharacters);
   const [selectedId, setSelectedId] = useState(null);
+  const [turn, setTurn] = useState('A');
+  const [winner, setWinner] = useState(null);
 
-  // Handlers for incoming socket events
+  const turnRef = useRef(turn);
+  useEffect(() => {
+    turnRef.current = turn;
+  }, [turn]);
+
+  // Update game state from server
+  const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
+    setCharacters(newChars);
+    setTurn(newTurn);
+    setWinner(newWinner);
+    setSelectedId(null);
+  }, []);
+
+  // Receive assigned team
   const onAssignTeam = useCallback((team) => {
     setMyTeam(team);
   }, []);
 
-  const onGameState = useCallback(({ characters, turn, winner }) => {
-    setCharacters(characters);
-    setTurn(turn);
-    setWinner(winner);
-    setSelectedId(null); // Clear selection on every update
-  }, []);
-
   useEffect(() => {
-    socket.on('assignTeam', onAssignTeam);
     socket.on('gameState', onGameState);
+    socket.on('assignTeam', onAssignTeam);
 
     return () => {
-      socket.off('assignTeam', onAssignTeam);
       socket.off('gameState', onGameState);
+      socket.off('assignTeam', onAssignTeam);
     };
-  }, [onAssignTeam, onGameState]);
+  }, [onGameState, onAssignTeam]);
 
-  // Selected character from characters array
+  // Emit updated characters, but DO NOT change turn on client
+  const emitGameState = useCallback(
+    (updatedChars) => {
+      socket.emit('updateGame', {
+        characters: updatedChars,
+        turn: turnRef.current, // Send current turn, server decides if valid
+        winner: winner,
+      });
+    },
+    [winner]
+  );
+
   const selectedChar = characters.find((c) => c.id === selectedId);
 
-  // Move emits event only, no local state update here
-  const moveCharacter = (id, dx, dy) => {
-    if (!myTeam || turn !== myTeam) return;
-    const char = characters.find((c) => c.id === id);
-    if (!char || char.team !== myTeam || char.movesLeft <= 0) return;
-
-    const newX = Math.min(gridSize - 1, Math.max(0, char.x + dx));
-    const newY = Math.min(gridSize - 1, Math.max(0, char.y + dy));
-
-    // Check tile occupied?
-    if (characters.some((c) => c.id !== id && c.x === newX && c.y === newY && c.hp > 0)) return;
-
-    socket.emit('moveCharacter', { id, newX, newY });
+  // Clicking a tile selects your character only if it's your turn
+  const handleTileClick = (char) => {
+    if (!char) return;
+    if (char.team === myTeam && turn === myTeam && char.hp > 0) {
+      setSelectedId(char.id);
+    }
   };
 
-  // Attack emits event only
-  const attack = (attackerId) => {
-    if (!myTeam || turn !== myTeam) return;
-    const attacker = characters.find((c) => c.id === attackerId);
-    if (!attacker || attacker.team !== myTeam || attacker.hasAttacked) return;
+  // Move character ONLY if movesLeft > 0 and turn matches
+  const moveCharacter = (id, dx, dy) => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+    if (selectedChar.movesLeft <= 0) return;
 
-    // Find enemy adjacent (Manhattan distance 1)
+    const newX = Math.max(0, Math.min(gridSize - 1, selectedChar.x + dx));
+    const newY = Math.max(0, Math.min(gridSize - 1, selectedChar.y + dy));
+
+    // Check if target tile is occupied by a living character
+    const isOccupied = characters.some(
+      (c) => c.id !== id && c.x === newX && c.y === newY && c.hp > 0
+    );
+    if (isOccupied) return;
+
+    const updatedChars = characters.map((c) =>
+      c.id === id
+        ? { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 }
+        : c
+    );
+
+    setCharacters(updatedChars);
+    emitGameState(updatedChars);
+  };
+
+  // Attack only if has not attacked yet, it's your turn, and attacker belongs to your team
+  const attack = (attackerId) => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
+    if (selectedChar.hasAttacked) return;
+
+    const attacker = characters.find((c) => c.id === attackerId);
+    if (!attacker) return;
+
+    // Find adjacent enemies
     const targets = characters.filter(
       (c) =>
         c.team !== attacker.team &&
@@ -96,38 +142,40 @@ function App() {
 
     const target = targets[0];
 
-    socket.emit('attackCharacter', { attackerId, targetId: target.id });
+    const updatedChars = characters.map((c) => {
+      if (c.id === target.id) {
+        return { ...c, hp: Math.max(0, c.hp - attacker.atk) };
+      }
+      if (c.id === attacker.id) {
+        return { ...c, hasAttacked: true };
+      }
+      return c;
+    });
+
+    setCharacters(updatedChars);
+    emitGameState(updatedChars);
   };
 
-  // End turn
+  // End turn by telling server, which resets movesLeft, hasAttacked and switches turn
   const endTurn = () => {
-    if (turn === myTeam && !winner) {
-      socket.emit('endTurn');
-      setSelectedId(null);
-    }
+    if (turn !== myTeam || winner !== null) return;
+    socket.emit('endTurn');
+    setSelectedId(null);
   };
 
-  // Surrender
+  // Surrender immediately sets winner to opponent and informs server
   const surrender = () => {
     if (!myTeam) return;
     const opponent = myTeam === 'A' ? 'B' : 'A';
-    socket.emit('surrender', { winner: opponent });
     setWinner(opponent);
-  };
-
-  // Select character only if belongs to player and alive and is player's turn
-  const handleTileClick = (char) => {
-    if (!char) return;
-    if (char.team === myTeam && turn === myTeam && char.hp > 0) {
-      setSelectedId(char.id);
-    }
+    socket.emit('surrender', { winner: opponent });
   };
 
   return (
     <div className="App">
       <h1>DuelGrid</h1>
       <h2>You are Team {myTeam || '...'}</h2>
-      <h2>Turn: Team {turn || '...'}</h2>
+      <h2>Turn: Team {turn}</h2>
 
       <div className="grid" aria-label="Game grid">
         {Array.from({ length: gridSize }).map((_, y) => (
