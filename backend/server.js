@@ -11,8 +11,8 @@ const io = new Server(server, {
   cors: { origin: ['http://localhost:3000', 'https://duelgrid-frontend.onrender.com'] },
 });
 
-const gridSize = 8;
-const baseCharacters = [
+const GRID_SIZE = 8;
+const BASE_CHARACTERS = [
   { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: '/sprites/knight.png' },
   { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: '/sprites/archer.png' },
   { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: '/sprites/mage.png' },
@@ -24,25 +24,26 @@ const baseCharacters = [
 ];
 
 let idCounter = 1;
+
 const generateTeam = (team, row) =>
-  baseCharacters.map((c, i) => ({
-    ...c,
+  BASE_CHARACTERS.map((char, index) => ({
+    ...char,
     id: idCounter++,
-    x: i,
+    x: index,
     y: row,
     team,
-    movesLeft: c.moveRange,
+    movesLeft: char.moveRange,
     hasAttacked: false,
   }));
 
 const rooms = {};
 let roomCounter = 1;
+const waitingQueue = [];
 
-const waitingQueue = [];  // Queue to hold waiting players
+// Helper to check adjacency
+const areAdjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
-const areAdjacent = (a, b) =>
-  Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
-
+// Validation function
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
   if (!newState || !newState.characters || !newState.turn) {
     console.log('Validation failed: newState or required fields missing');
@@ -56,13 +57,13 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
   const oldChars = room.gameState.characters;
   const newChars = newState.characters;
 
-  for (let newChar of newChars) {
-    const oldChar = oldChars.find((c) => c.id === newChar.id);
+  // Check characters one by one
+  for (const newChar of newChars) {
+    const oldChar = oldChars.find(c => c.id === newChar.id);
     if (!oldChar) {
       console.log(`Validation failed: Character ID ${newChar.id} not found`);
       return false;
     }
-
     if (newChar.team !== oldChar.team) {
       console.log('Validation failed: Character team mismatch');
       return false;
@@ -85,20 +86,21 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
       console.log('Validation failed: movesLeft not decreased correctly');
       return false;
     }
-
     if (oldChar.hasAttacked && !newChar.hasAttacked) {
       console.log('Validation failed: Attack status reverted');
       return false;
     }
   }
 
-  const positions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
-  if (new Set(positions).size !== positions.length) {
+  // Check positions are unique (no overlap)
+  const alivePositions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
+  if (new Set(alivePositions).size !== alivePositions.length) {
     console.log('Validation failed: Two characters occupy the same position');
     return false;
   }
 
-  const attackers = newChars.filter((nc) => {
+  // Validate attacks
+  const attackers = newChars.filter(nc => {
     const oc = oldChars.find(c => c.id === nc.id);
     return !oc.hasAttacked && nc.hasAttacked && nc.hp > 0;
   });
@@ -108,21 +110,23 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     const adjacentEnemiesOld = oldChars.filter(c => c.team !== attacker.team && areAdjacent(c, oldAttacker) && c.hp > 0);
     const adjacentEnemiesNew = newChars.filter(c => c.team !== attacker.team && areAdjacent(c, attacker) && c.hp > 0);
 
-    let attackedEnemyFound = false;
+    let validAttackFound = false;
     for (const oldEnemy of adjacentEnemiesOld) {
       const newEnemy = newChars.find(c => c.id === oldEnemy.id);
       const hpDiff = oldEnemy.hp - newEnemy.hp;
       if (hpDiff === attacker.atk) {
-        attackedEnemyFound = true;
+        validAttackFound = true;
         break;
       }
     }
-    if (!attackedEnemyFound) {
+
+    if (!validAttackFound) {
       console.log('Validation failed: No valid enemy attacked');
       return false;
     }
   }
 
+  // Validate turn changes
   const turnChanged = newState.turn !== room.gameState.turn;
   if (turnChanged) {
     if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) {
@@ -138,8 +142,7 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
       }
 
       if (c.team === newState.turn) {
-        // New player team should reset moves and attack status
-        const baseChar = baseCharacters.find(bc => bc.name === c.name);
+        const baseChar = BASE_CHARACTERS.find(bc => bc.name === c.name);
         if (!baseChar) {
           console.log('Validation failed: Base character not found');
           return false;
@@ -149,7 +152,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
           return false;
         }
       } else {
-        // Old player team state should not improve
         if (c.movesLeft > oldC.movesLeft) {
           console.log('Validation failed: Old team movesLeft increased');
           return false;
@@ -160,8 +162,8 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
         }
       }
     }
-
   } else {
+    // No turn change: ensure no state regression mid-turn
     for (const c of newState.characters) {
       const oldC = oldChars.find(oc => oc.id === c.id);
       if (!oldC) {
@@ -181,24 +183,23 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     }
   }
 
+  // Determine if there's a winner
   const aliveA = newState.characters.some(c => c.team === 'A' && c.hp > 0);
   const aliveB = newState.characters.some(c => c.team === 'B' && c.hp > 0);
   let winner = null;
   if (!aliveA) winner = 'B';
   if (!aliveB) winner = 'A';
 
-  // Preserve winner if it already exists
-const currentWinner = room.gameState.winner;
+  // Update gameState preserving winner if already set
+  const currentWinner = room.gameState.winner || winner;
 
-room.gameState = {
-  characters: newCharacters.filter(c => c.hp > 0), // 💥 remove dead characters
-  turn: nextTurn,
-  winner: currentWinner,
-};
+  room.gameState = {
+    characters: newState.characters.filter(c => c.hp > 0),
+    turn: newState.turn,
+    winner: currentWinner,
+  };
 
-
-
-  console.log('Validation succeeded for player', playerTeam);
+  console.log(`Validation succeeded for player ${playerTeam}`);
   return true;
 }
 
@@ -216,49 +217,14 @@ io.on('connection', (socket) => {
     const newRoomId = `room-${roomCounter++}`;
     rooms[newRoomId] = {
       gameState: {
-        characters: [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)],
+        characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
         turn: 'A',
         winner: null,
       },
       players: {},
-      waitingTeam: null,
     };
 
     const room = rooms[newRoomId];
-    // Inside io.on('connection', (socket) => { ... })
-
-socket.on('surrender', () => {
-  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-  if (!playerRoomId) {
-    console.log(`surrender: No room found for socket ${socket.id}`);
-    return;
-  }
-
-  const room = rooms[playerRoomId];
-  const surrenderingTeam = room.players[socket.id];
-  if (!surrenderingTeam) {
-    console.log(`surrender: Player team not found for socket ${socket.id}`);
-    return;
-  }
-
-  if (room.gameState.winner !== null) {
-    console.log(`surrender: Game already has a winner ${room.gameState.winner}`);
-    return;
-  }
-
-  const winner = surrenderingTeam === 'A' ? 'B' : 'A';
-
-  // Update the game state with the winner
-  room.gameState = {
-    ...room.gameState,
-    winner,
-  };
-
-  console.log(`Player ${surrenderingTeam} surrendered. Winner is ${winner}.`);
-
-  // Broadcast updated game state to the room so both players see it
-  io.to(playerRoomId).emit('gameState', room.gameState);
-});
 
     // Assign teams
     room.players[playerA] = 'A';
@@ -295,97 +261,38 @@ socket.on('surrender', () => {
 
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
 
-    console.log(`Player ${playerTeam} (${socket.id}) sent updateGame. Valid: ${valid}. New turn: ${newState.turn}`);
+    console.log(`Player ${playerTeam} (${socket.id}) sent updateGame. Valid: ${valid}`);
 
     if (valid) {
       io.to(playerRoomId).emit('gameState', room.gameState);
     } else {
-      socket.emit('gameState', room.gameState); // revert to current valid state
+      socket.emit('invalidUpdate', 'Your game state update was invalid.');
     }
   });
-  socket.on('endTurn', () => {
-  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-  if (!playerRoomId) {
-    console.log(`endTurn: No room found for socket ${socket.id}`);
-    return;
-  }
-  const room = rooms[playerRoomId];
-  const playerTeam = room.players[socket.id];
-  if (!playerTeam) {
-    console.log(`endTurn: Player team not found for socket ${socket.id}`);
-    return;
-  }
-
-  if (room.gameState.turn !== playerTeam) {
-    console.log(`endTurn: Not player ${playerTeam}'s turn`);
-    return;
-  }
-
-  if (room.gameState.winner !== null) {
-    console.log(`endTurn: Game already won by ${room.gameState.winner}`);
-    return;
-  }
-
-  const nextTurn = playerTeam === 'A' ? 'B' : 'A';
-
-  // Reset movesLeft and hasAttacked only for characters of nextTurn
-  const newCharacters = room.gameState.characters.map(char => {
-    if (char.team === nextTurn) {
-      const baseChar = baseCharacters.find(bc => bc.name === char.name);
-      return {
-        ...char,
-        movesLeft: baseChar ? baseChar.moveRange : char.movesLeft,
-        hasAttacked: false,
-      };
-    }
-    // For the current player’s team, keep state unchanged
-    return { ...char };
-  });
-
-  // Preserve winner if already set (probably null here, but safe)
-  const currentWinner = room.gameState.winner;
-
-  room.gameState = {
-    characters: newCharacters,
-    turn: nextTurn,
-    winner: currentWinner,
-  };
-
-  console.log(`Turn ended by player ${playerTeam}. Now it is ${nextTurn}'s turn.`);
-
-  io.to(playerRoomId).emit('gameState', room.gameState);
-});
-
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
 
-    // Remove from waiting queue if still waiting
+    // Remove from waiting queue if present
     const queueIndex = waitingQueue.indexOf(socket.id);
-    if (queueIndex !== -1) {
-      waitingQueue.splice(queueIndex, 1);
-      return;
-    }
+    if (queueIndex !== -1) waitingQueue.splice(queueIndex, 1);
 
-    // Remove from room if already in a game
-    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (playerRoomId) {
-      const room = rooms[playerRoomId];
-      delete room.players[socket.id];
+    // Remove from rooms
+    for (const [roomId, room] of Object.entries(rooms)) {
+      if (room.players[socket.id]) {
+        delete room.players[socket.id];
+        io.to(roomId).emit('playerLeft', socket.id);
 
-      io.to(playerRoomId).emit('playerDisconnected', socket.id);
-
-      // Optionally remove room if both players are gone
-      const playerCount = Object.keys(room.players).length;
-      if (playerCount === 0) {
-        delete rooms[playerRoomId];
-        console.log(`Room ${playerRoomId} deleted as both players left.`);
+        // If room empty, delete it
+        if (Object.keys(room.players).length === 0) {
+          delete rooms[roomId];
+          console.log(`Room ${roomId} deleted due to no players.`);
+        }
+        break;
       }
     }
   });
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+const PORT = process.env.PORT || 5001;
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
