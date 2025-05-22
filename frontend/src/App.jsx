@@ -167,7 +167,7 @@ function App() {
     turn: nextTurn,
     characters: characters.map(c => {
       if (c.team === nextTurn) {
-        const base = BASE_CHARACTERS.find(b => b.name === c.name);
+        const base = base_Characters.find(b => b.name === c.name);
         return {
           ...c,
           movesLeft: base?.moveRange || 0,
