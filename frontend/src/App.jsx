@@ -50,8 +50,9 @@ function App() {
 
   const turnRef = useRef(turn);
   useEffect(() => {
-    turnRef.current = turn;
-  }, [turn]);
+  turnRef.current = turn;
+}, [turn]);
+
 
   // Update game state from server
   const onGameState = useCallback(({ characters: newChars, turn: newTurn, winner: newWinner }) => {
