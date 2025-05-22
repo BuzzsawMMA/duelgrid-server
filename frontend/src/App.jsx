@@ -167,7 +167,7 @@ function App() {
     turn: nextTurn,
     characters: characters.map(c => {
       if (c.team === nextTurn) {
-        const base = base_Characters.find(b => b.name === c.name);
+        const base = baseCharacters.find(b => b.name === c.name);
         return {
           ...c,
           movesLeft: base?.moveRange || 0,
@@ -176,12 +176,12 @@ function App() {
       }
       return c;
     }),
+    winner: winner,
   };
 
   socket.emit('updateGame', newState);
   setSelectedId(null);
 };
-
 
   // Surrender immediately sets winner to opponent and informs server
   const surrender = () => {
