@@ -47,6 +47,7 @@ body, html, .App {
 }
 
 .character {
+  position: relative;
   width: 90%;
   height: 90%;
 }
@@ -96,14 +97,18 @@ button:hover {
     padding: 0.5rem 0.8rem;
   }
 }
-.health-bar-container {
+.health-bar-wrapper {
+  position: absolute;
+  bottom: -8px; /* slightly below the sprite */
+  left: 50%;
+  transform: translateX(-50%);
   width: 80%;
   height: 6px;
   background-color: #555;
   border: 1px solid #000;
-  margin-top: 4px;
   border-radius: 3px;
   overflow: hidden;
+  z-index: 2;
 }
 
 .health-bar {
