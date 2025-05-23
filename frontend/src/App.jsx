@@ -69,6 +69,11 @@ function App() {
     socket.on('gameState', onGameState);
     socket.on('assignTeam', onAssignTeam);
 
+    socket.on('opponentSurrendered', ({ winner }) => {
+    setWinner(winner);
+    alert(`Team ${winner === 'A' ? 'B' : 'A'} has surrendered. You win!`);
+  });
+
     return () => {
       socket.off('gameState', onGameState);
       socket.off('assignTeam', onAssignTeam);

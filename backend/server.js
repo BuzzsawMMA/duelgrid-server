@@ -351,6 +351,25 @@ io.on('connection', (socket) => {
       }
     }
   });
+  socket.on('surrender', () => {
+  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+  if (!playerRoomId) {
+    console.log(`surrender: No room found for socket ${socket.id}`);
+    return;
+  }
+
+  const room = rooms[playerRoomId];
+  const playerTeam = room.players[socket.id];
+  const winningTeam = playerTeam === 'A' ? 'B' : 'A';
+
+  if (!room.gameState.winner) {
+    room.gameState.winner = winningTeam;
+    io.to(playerRoomId).emit('gameState', room.gameState);
+    io.to(playerRoomId).emit('playerSurrendered', { surrenderedTeam: playerTeam, winner: winningTeam });
+    console.log(`Player ${playerTeam} surrendered. Team ${winningTeam} wins.`);
+  }
+});
+
 });
 
 const PORT = process.env.PORT || 5001;
