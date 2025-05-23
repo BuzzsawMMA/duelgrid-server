@@ -96,3 +96,17 @@ button:hover {
     padding: 0.5rem 0.8rem;
   }
 }
+.health-bar-container {
+  width: 80%;
+  height: 6px;
+  background-color: #555;
+  border: 1px solid #000;
+  margin-top: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.health-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+}

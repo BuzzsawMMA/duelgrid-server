@@ -173,32 +173,42 @@ function App() {
       <h2>Turn: Team {turn}</h2>
 
       <div className="grid" aria-label="Game grid">
-        {Array.from({ length: gridSize }).map((_, y) => (
-          <div key={y} className="row">
-            {Array.from({ length: gridSize }).map((_, x) => {
-              const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
-              return (
-                <div
-                  key={x}
-                  className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
-                  onClick={() => handleTileClick(char)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
-                  }}
-                >
-                  {char && (
-                    <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
-                      <img src={char.sprite} alt={char.name} className="sprite" />
-                    </div>
-                  )}
+  {Array.from({ length: gridSize }).map((_, y) => (
+    <div key={y} className="row">
+      {Array.from({ length: gridSize }).map((_, x) => {
+        const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
+        return (
+          <div
+            key={x}
+            className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
+            onClick={() => handleTileClick(char)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
+            }}
+          >
+            {char && (
+              <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
+                <img src={char.sprite} alt={char.name} className="sprite" />
+                <div className="health-bar-container">
+                  <div
+                    className="health-bar"
+                    style={{
+                      width: `${(char.hp / baseCharacters.find(c => c.name === char.name).hp) * 100}%`,
+                      backgroundColor:
+                        char.hp > 50 ? 'green' : char.hp > 20 ? 'orange' : 'red',
+                    }}
+                  />
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        );
+      })}
+    </div>
+  ))}
+</div>
 
       {selectedChar && selectedChar.team === myTeam ? (
         <div className="character-stats" aria-live="polite">
