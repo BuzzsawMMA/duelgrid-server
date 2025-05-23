@@ -189,20 +189,31 @@ function App() {
             }}
           >
             {char && (
-              <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
-                <img src={char.sprite} alt={char.name} className="sprite" />
-                <div className="health-bar-container">
-                  <div
-                    className="health-bar"
-                    style={{
-                      width: `${(char.hp / baseCharacters.find(c => c.name === char.name).hp) * 100}%`,
-                      backgroundColor:
-                        char.hp > 50 ? 'green' : char.hp > 20 ? 'orange' : 'red',
-                    }}
-                  />
-                </div>
-              </div>
-            )}
+  <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
+    <img src={char.sprite} alt={char.name} className="sprite" />
+    <div className="health-bar-container">
+      {(() => {
+        const baseChar = baseCharacters.find(c => c.name === char.name);
+        if (!baseChar || !baseChar.hp) {
+          // Base HP not found; skip health bar rendering or show full bar
+          return null; 
+        }
+        const hpPercent = (char.hp / baseChar.hp) * 100;
+        return (
+          <div
+            className="health-bar"
+            style={{
+              width: `${hpPercent}%`,
+              backgroundColor:
+                char.hp > 50 ? 'green' : char.hp > 20 ? 'orange' : 'red',
+            }}
+          />
+        );
+      })()}
+    </div>
+  </div>
+)}
+
           </div>
         );
       })}
