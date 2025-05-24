@@ -123,3 +123,7 @@ button:hover {
 .tile.healable {
   background-color: #006400; /* dark green highlight for heal */
 }
+.tile.heal-targetable {
+  border: 2px solid green;
+  cursor: pointer;
+}
