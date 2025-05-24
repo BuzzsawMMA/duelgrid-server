@@ -38,18 +38,18 @@ const generateTeam = (team, row) =>
     team,
     movesLeft: char.moveRange,
     hasAttacked: false,
-    maxHp: char.hp, // Add maxHp for validation checks
+    maxHp: char.hp,
   }));
 
 const rooms = {};
 let roomCounter = 1;
 
-// Store waiting players by socket.id, not socket object
 const waitingQueue = new Set();
 
 const areAdjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
-// Your validateAndUpdateGameRoom function unchanged, but I will include it here for completeness
+// validateAndUpdateGameRoom function as you provided (unchanged)...
+
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
   if (!newState || !newState.characters || !newState.turn) {
     console.log('Validation failed: newState or required fields missing');
@@ -219,121 +219,91 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Handle player requesting to join a game
   socket.on('joinGame', () => {
-    // Check if socket already in waiting queue
-    if (waitingQueue.has(socket.id)) {
-      socket.emit('waitingForOpponent');
-      return;
-    }
+    console.log('Join game requested by', socket.id);
 
     if (waitingQueue.size > 0) {
-      // Get the first waiting socket id
-      const waitingPlayerId = waitingQueue.values().next().value;
+      // Pair with waiting player
+      const waitingPlayerId = [...waitingQueue][0];
       waitingQueue.delete(waitingPlayerId);
 
-      const roomId = `room${roomCounter++}`;
-      rooms[roomId] = {
-        players: {
-          [waitingPlayerId]: 'A',
-          [socket.id]: 'B',
-        },
-        gameState: {
-          characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
-          turn: 'A',
-          winner: null,
-        },
+      const roomId = `room-${roomCounter++}`;
+      const teamA = generateTeam('A', 0);
+      const teamB = generateTeam('B', GRID_SIZE - 1);
+
+      const initialGameState = {
+        characters: [...teamA, ...teamB],
+        turn: 'A',
+        winner: null,
       };
 
-      // Join rooms
+      rooms[roomId] = {
+        players: [waitingPlayerId, socket.id],
+        gameState: initialGameState,
+      };
+
+      // Join both sockets to the room
       io.sockets.sockets.get(waitingPlayerId)?.join(roomId);
       socket.join(roomId);
 
-      io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
-      console.log(`Game started between ${waitingPlayerId} (A) and ${socket.id} (B) in ${roomId}`);
+      // Emit assignTeam individually
+      io.to(waitingPlayerId).emit('assignTeam', 'A');
+      io.to(socket.id).emit('assignTeam', 'B');
+
+      // Emit gameStart event to both players with initial game state
+      io.to(roomId).emit('gameStart', { roomId, gameState: initialGameState });
+
+      console.log(`Started game in ${roomId} between ${waitingPlayerId} (Team A) and ${socket.id} (Team B)`);
     } else {
-      // Add socket.id to waiting queue
+      // No waiting players, add this one to waiting queue
       waitingQueue.add(socket.id);
       socket.emit('waitingForOpponent');
-      console.log(`Socket ${socket.id} added to waiting queue`);
+      console.log(`Player ${socket.id} waiting for opponent`);
     }
   });
 
-  socket.on('endTurn', () => {
-    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (!playerRoomId) {
-      console.log(`endTurn: No room found for socket ${socket.id}`);
+  socket.on('gameUpdate', ({ roomId, newState, playerTeam }) => {
+    if (!rooms[roomId]) {
+      console.log('Invalid roomId in gameUpdate');
       return;
     }
-
-    const room = rooms[playerRoomId];
-    const playerTeam = room.players[socket.id];
-
-    if (room.gameState.turn !== playerTeam) {
-      console.log('endTurn: Not your turn');
+    const room = rooms[roomId];
+    if (!room.players.includes(socket.id)) {
+      console.log('Player not in room on gameUpdate');
       return;
     }
-
-    const newTurn = playerTeam === 'A' ? 'B' : 'A';
-
-    for (const c of room.gameState.characters) {
-      if (c.team === newTurn) {
-        const baseChar = BASE_CHARACTERS.find(bc => bc.name === c.name);
-        c.movesLeft = baseChar.moveRange;
-        c.hasAttacked = false;
-      }
-    }
-
-    room.gameState.turn = newTurn;
-    io.to(playerRoomId).emit('updateGameState', room.gameState);
-    console.log(`Turn ended by player ${playerTeam} in room ${playerRoomId}`);
-  });
-
-  socket.on('updateGameState', (newState) => {
-    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (!playerRoomId) {
-      console.log(`updateGameState: No room found for socket ${socket.id}`);
-      return;
-    }
-
-    const room = rooms[playerRoomId];
-    const playerTeam = room.players[socket.id];
-
-    const isValid = validateAndUpdateGameRoom(room, newState, playerTeam);
-    if (isValid) {
-      io.to(playerRoomId).emit('updateGameState', room.gameState);
+    const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
+    if (valid) {
+      // Broadcast the updated game state to the room except the sender (optional)
+      socket.to(roomId).emit('gameUpdate', room.gameState);
+      // You could also emit to all to keep both synced
+      // io.to(roomId).emit('gameUpdate', room.gameState);
     } else {
-      socket.emit('invalidUpdate', 'Your game update was invalid.');
+      console.log('Invalid game update from player', playerTeam);
+      socket.emit('invalidMove');
     }
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-
-    // Remove from waiting queue if present
-    if (waitingQueue.has(socket.id)) {
-      waitingQueue.delete(socket.id);
-      console.log(`Socket ${socket.id} removed from waiting queue on disconnect`);
-    }
-
-    // Find room for player and remove them
-    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
-    if (playerRoomId) {
-      const room = rooms[playerRoomId];
-      delete room.players[socket.id];
-
-      // Inform other players
-      io.to(playerRoomId).emit('playerLeft', { playerId: socket.id });
-
-      // If room is empty, delete it
-      if (Object.keys(room.players).length === 0) {
-        delete rooms[playerRoomId];
-        console.log(`Room ${playerRoomId} deleted as empty`);
+    // Remove from waiting queue if there
+    waitingQueue.delete(socket.id);
+    // Remove from any rooms and notify opponent if desired
+    for (const [roomId, room] of Object.entries(rooms)) {
+      if (room.players.includes(socket.id)) {
+        // Notify other player about disconnect
+        room.players.forEach((playerId) => {
+          if (playerId !== socket.id) {
+            io.to(playerId).emit('opponentDisconnected');
+          }
+        });
+        delete rooms[roomId];
+        console.log(`Room ${roomId} deleted due to disconnect`);
+        break;
       }
     }
   });
 });
 
-server.listen(process.env.PORT || 3001, () => {
-  console.log('Listening on port', process.env.PORT || 3001);
-});
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
