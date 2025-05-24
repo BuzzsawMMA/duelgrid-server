@@ -95,6 +95,7 @@ function App() {
   );
 
   const selectedChar = characters.find((c) => c.id === selectedId);
+if (!selectedChar) return;
 
   const handleTileClick = (char) => {
     if (!char) return;
