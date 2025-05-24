@@ -1,46 +1,4 @@
-import { io } from 'socket.io-client';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import knightSprite from './sprites/knight.png';
-import archerSprite from './sprites/archer.png';
-import mageSprite from './sprites/mage.png';
-import healerSprite from './sprites/healer.png';
-import warriorSprite from './sprites/warrior.png';
-import rogueSprite from './sprites/rogue.png';
-import summonerSprite from './sprites/summoner.png';
-import paladinSprite from './sprites/paladin.png';
-import './App.css';
-import TutorialModal from './TutorialModal';
-
-const socket = io('https://duelgrid-server.onrender.com', {
-  transports: ['websocket'],
-});
-
-const gridSize = 8;
-
-const baseCharacters = [
-  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: knightSprite },
-  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: archerSprite },
-  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: mageSprite },
-  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: healerSprite },
-  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: warriorSprite },
-  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: rogueSprite },
-  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: summonerSprite },
-  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: paladinSprite },
-];
-
-let idCounter = 1;
-const generateTeam = (team, row) =>
-  baseCharacters.map((c, i) => ({
-    ...c,
-    id: idCounter++,
-    x: i,
-    y: row,
-    team,
-    movesLeft: c.moveRange,
-    hasAttacked: false,
-  }));
-
-const initialCharacters = [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)];
+// ... imports unchanged
 
 function App() {
   const [myTeam, setMyTeam] = useState(null);
@@ -48,6 +6,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [turn, setTurn] = useState('A');
   const [winner, setWinner] = useState(null);
+  const [isAttackMode, setIsAttackMode] = useState(false); // NEW
 
   const turnRef = useRef(turn);
   useEffect(() => {
@@ -59,6 +18,7 @@ function App() {
     setTurn(newTurn);
     setWinner(newWinner);
     setSelectedId(null);
+    setIsAttackMode(false); // Reset attack mode
   }, []);
 
   const onAssignTeam = useCallback((team) => {
@@ -94,8 +54,33 @@ function App() {
 
   const handleTileClick = (char) => {
     if (!char) return;
+
+    if (isAttackMode && selectedChar && selectedChar.team === myTeam && turn === myTeam) {
+      const isTargetInRange =
+        Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
+        char.hp > 0 &&
+        char.team !== myTeam;
+
+      if (isTargetInRange && !selectedChar.hasAttacked) {
+        const updatedChars = characters.map((c) => {
+          if (c.id === char.id) {
+            return { ...c, hp: Math.max(0, c.hp - selectedChar.atk) };
+          }
+          if (c.id === selectedChar.id) {
+            return { ...c, hasAttacked: true };
+          }
+          return c;
+        });
+        setCharacters(updatedChars);
+        emitGameState(updatedChars);
+        setIsAttackMode(false);
+        return;
+      }
+    }
+
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
       setSelectedId(char.id);
+      setIsAttackMode(false); // Cancel attack mode when selecting a new ally
     }
   };
 
@@ -119,54 +104,16 @@ function App() {
     emitGameState(updatedChars);
   };
 
-  const attack = (attackerId) => {
-    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
-    if (selectedChar.hasAttacked) return;
-
-    const attacker = characters.find((c) => c.id === attackerId);
-    if (!attacker) return;
-
-    const targets = characters.filter(
-      (c) =>
-        c.team !== attacker.team &&
-        c.hp > 0 &&
-        Math.abs(c.x - attacker.x) + Math.abs(c.y - attacker.y) === 1
-    );
-
-    if (targets.length === 0) return;
-
-    let target = targets[0];
-
-    if (targets.length > 1) {
-      const names = targets.map((t, idx) => `${idx + 1}: ${t.name} (${t.hp} HP)`).join('\n');
-      const choice = prompt(`Choose a target:\n${names}`);
-      const selectedIndex = parseInt(choice) - 1;
-      if (!isNaN(selectedIndex) && targets[selectedIndex]) {
-        target = targets[selectedIndex];
-      } else {
-        return;
-      }
-    }
-
-    const updatedChars = characters.map((c) => {
-      if (c.id === target.id) {
-        return { ...c, hp: Math.max(0, c.hp - attacker.atk) };
-      }
-      if (c.id === attacker.id) {
-        return { ...c, hasAttacked: true };
-      }
-      return c;
-    });
-
-    setCharacters(updatedChars);
-    emitGameState(updatedChars);
+  const initiateAttackMode = () => {
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam || selectedChar.hasAttacked) return;
+    setIsAttackMode(true);
   };
 
   const endTurn = () => {
     if (turn !== myTeam || winner !== null) return;
-
     socket.emit('endTurn');
     setSelectedId(null);
+    setIsAttackMode(false);
   };
 
   const surrender = () => {
@@ -188,10 +135,17 @@ function App() {
           <div key={y} className="row">
             {Array.from({ length: gridSize }).map((_, x) => {
               const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
+              const isTargetable =
+                isAttackMode &&
+                selectedChar &&
+                char &&
+                char.team !== myTeam &&
+                Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1;
+
               return (
                 <div
                   key={x}
-                  className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
+                  className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''} ${isTargetable ? 'targetable' : ''}`}
                   onClick={() => handleTileClick(char)}
                 >
                   {char && (
@@ -234,7 +188,7 @@ function App() {
             <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0}>→</button>
             <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0}>↑</button>
             <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0}>↓</button>
-            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked}>Attack</button>
+            <button onClick={initiateAttackMode} disabled={selectedChar.hasAttacked}>Attack</button>
           </>
         )}
       </div>
