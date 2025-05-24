@@ -95,71 +95,42 @@ function App() {
   );
 
   const selectedChar = characters.find((c) => c.id === selectedId);
-if (!selectedChar) return;
 
   const handleTileClick = (char) => {
-    if (!char) return;
+  if (!char) return;
 
-    if (isAttackMode && selectedChar && selectedChar.team === myTeam && turn === myTeam) {
-      const isTargetInRange =
-        Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
-        char.hp > 0 &&
-        char.team !== myTeam;
+  const selectedChar = characters.find((c) => c.id === selectedId);
+  if (!selectedChar) return;
 
-      if (isTargetInRange && !selectedChar.hasAttacked) {
-        const updatedChars = characters.map((c) => {
-          if (c.id === char.id) {
-            return { ...c, hp: Math.max(0, c.hp - selectedChar.atk) };
-          }
-          if (c.id === selectedChar.id) {
-            return { ...c, hasAttacked: true };
-          }
-          return c;
-        });
-        setCharacters(updatedChars);
-        emitGameState(updatedChars);
-        setIsAttackMode(false);
-        return;
-      }
+  if (isAttackMode && selectedChar.team === myTeam && turn === myTeam) {
+    const isTargetInRange =
+      Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
+      char.hp > 0 &&
+      char.team !== myTeam;
+
+    if (isTargetInRange && !selectedChar.hasAttacked) {
+      const updatedChars = characters.map((c) => {
+        if (c.id === char.id) {
+          return { ...c, hp: Math.max(0, c.hp - selectedChar.atk) };
+        }
+        if (c.id === selectedChar.id) {
+          return { ...c, hasAttacked: true };
+        }
+        return c;
+      });
+      setCharacters(updatedChars);
+      emitGameState(updatedChars);
+      setIsAttackMode(false);
+      return;
     }
+  }
 
-    if (char.team === myTeam && turn === myTeam && char.hp > 0) {
-      setSelectedId(char.id);
-      setIsAttackMode(false); // Cancel attack mode when selecting a new ally
-    }
-  };
+  if (char.team === myTeam && turn === myTeam && char.hp > 0) {
+    setSelectedId(char.id);
+    setIsAttackMode(false); // Cancel attack mode when selecting a new ally
+  }
+};
 
-  const moveCharacter = (id, dx, dy) => {
-    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
-    if (selectedChar.movesLeft <= 0) return;
-
-    const newX = Math.max(0, Math.min(gridSize - 1, selectedChar.x + dx));
-    const newY = Math.max(0, Math.min(gridSize - 1, selectedChar.y + dy));
-
-    const isOccupied = characters.some(
-      (c) => c.id !== id && c.x === newX && c.y === newY && c.hp > 0
-    );
-    if (isOccupied) return;
-
-    const updatedChars = characters.map((c) =>
-      c.id === id ? { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 } : c
-    );
-
-    setCharacters(updatedChars);
-    emitGameState(updatedChars);
-  };
-
-  const initiateAttackMode = () => {
-    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam || selectedChar.hasAttacked) return;
-    setIsAttackMode(true);
-  };
-
-  const endTurn = () => {
-    if (turn !== myTeam || winner !== null) return;
-    socket.emit('endTurn');
-    setSelectedId(null);
-    setIsAttackMode(false);
-  };
 
   const surrender = () => {
     if (!myTeam) return;
