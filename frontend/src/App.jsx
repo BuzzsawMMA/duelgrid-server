@@ -97,45 +97,36 @@ function App() {
   const selectedChar = characters.find((c) => c.id === selectedId);
 
   const handleTileClick = (char) => {
-  if (!char) return;
+    if (!char) return;
 
-  // Get fresh selectedChar from latest state characters
-  const selectedCharFresh = characters.find((c) => c.id === selectedId);
-  if (!selectedCharFresh) return;
+    if (isAttackMode && selectedChar && selectedChar.team === myTeam && turn === myTeam) {
+      const isTargetInRange =
+        Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
+        char.hp > 0 &&
+        char.team !== myTeam;
 
-  if (
-    isAttackMode &&
-    selectedCharFresh.team === myTeam &&
-    turn === myTeam
-  ) {
-    const isTargetInRange =
-      Math.abs(char.x - selectedCharFresh.x) + Math.abs(char.y - selectedCharFresh.y) === 1 &&
-      char.hp > 0 &&
-      char.team !== myTeam;
-
-    if (isTargetInRange && !selectedCharFresh.hasAttacked) {
-      const updatedChars = characters.map((c) => {
-        if (c.id === char.id) {
-          return { ...c, hp: Math.max(0, c.hp - selectedCharFresh.atk) };
-        }
-        if (c.id === selectedCharFresh.id) {
-          return { ...c, hasAttacked: true };
-        }
-        return c;
-      });
-      setCharacters(updatedChars);
-      emitGameState(updatedChars);
-      setIsAttackMode(false);
-      return;
+      if (isTargetInRange && !selectedChar.hasAttacked) {
+        const updatedChars = characters.map((c) => {
+          if (c.id === char.id) {
+            return { ...c, hp: Math.max(0, c.hp - selectedChar.atk) };
+          }
+          if (c.id === selectedChar.id) {
+            return { ...c, hasAttacked: true };
+          }
+          return c;
+        });
+        setCharacters(updatedChars);
+        emitGameState(updatedChars);
+        setIsAttackMode(false);
+        return;
+      }
     }
-  }
 
-  if (char.team === myTeam && turn === myTeam && char.hp > 0) {
-    setSelectedId(char.id);
-    setIsAttackMode(false); // Cancel attack mode when selecting a new ally
-  }
-};
-
+    if (char.team === myTeam && turn === myTeam && char.hp > 0) {
+      setSelectedId(char.id);
+      setIsAttackMode(false); // Cancel attack mode when selecting a new ally
+    }
+  };
 
   const moveCharacter = (id, dx, dy) => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
