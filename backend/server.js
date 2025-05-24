@@ -319,7 +319,7 @@ io.on('connection', (socket) => {
       }
     } else {
       // Remove from waiting queue if waiting
-      const idx = waitingQueue.indexOf(socket.id);
+      const idx = waitingQueue.findIndex(s => s.id === socket.id);
       if (idx !== -1) waitingQueue.splice(idx, 1);
     }
   });
