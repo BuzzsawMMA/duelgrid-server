@@ -9,7 +9,7 @@ import rogueSprite from './sprites/rogue.png';
 import summonerSprite from './sprites/summoner.png';
 import paladinSprite from './sprites/paladin.png';
 import './App.css';
-import TutorialModal from './TutorialModal'; // adjust path if needed
+import TutorialModal from './TutorialModal';
 
 const socket = io('https://duelgrid-server.onrender.com', {
   transports: ['websocket'],
@@ -68,7 +68,6 @@ function App() {
   useEffect(() => {
     socket.on('gameState', onGameState);
     socket.on('assignTeam', onAssignTeam);
-
     socket.on('opponentSurrendered', ({ winner }) => {
       setWinner(winner);
       alert(`Team ${winner === 'A' ? 'B' : 'A'} has surrendered. You win!`);
@@ -113,9 +112,7 @@ function App() {
     if (isOccupied) return;
 
     const updatedChars = characters.map((c) =>
-      c.id === id
-        ? { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 }
-        : c
+      c.id === id ? { ...c, x: newX, y: newY, movesLeft: c.movesLeft - 1 } : c
     );
 
     setCharacters(updatedChars);
@@ -138,7 +135,18 @@ function App() {
 
     if (targets.length === 0) return;
 
-    const target = targets[0];
+    let target = targets[0];
+
+    if (targets.length > 1) {
+      const names = targets.map((t, idx) => `${idx + 1}: ${t.name} (${t.hp} HP)`).join('\n');
+      const choice = prompt(`Choose a target:\n${names}`);
+      const selectedIndex = parseInt(choice) - 1;
+      if (!isNaN(selectedIndex) && targets[selectedIndex]) {
+        target = targets[selectedIndex];
+      } else {
+        return;
+      }
+    }
 
     const updatedChars = characters.map((c) => {
       if (c.id === target.id) {
@@ -171,12 +179,11 @@ function App() {
   return (
     <div className="App">
       <TutorialModal />
-
       <h1>DuelGrid</h1>
       <h2>You are Team {myTeam || '...'}</h2>
       <h2>Turn: Team {turn}</h2>
 
-      <div className="grid" aria-label="Game grid">
+      <div className="grid">
         {Array.from({ length: gridSize }).map((_, y) => (
           <div key={y} className="row">
             {Array.from({ length: gridSize }).map((_, x) => {
@@ -186,11 +193,6 @@ function App() {
                   key={x}
                   className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
                   onClick={() => handleTileClick(char)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
-                  }}
                 >
                   {char && (
                     <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
@@ -215,7 +217,7 @@ function App() {
       </div>
 
       {selectedChar && selectedChar.team === myTeam ? (
-        <div className="character-stats" aria-live="polite">
+        <div className="character-stats">
           <h3>{selectedChar.name}</h3>
           <p>HP: {selectedChar.hp}</p>
           <p>ATK: {selectedChar.atk}</p>
@@ -228,26 +230,26 @@ function App() {
       <div className="controls">
         {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
           <>
-            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0} aria-label="Move left">←</button>
-            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0} aria-label="Move right">→</button>
-            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0} aria-label="Move up">↑</button>
-            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0} aria-label="Move down">↓</button>
-            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked} aria-label="Attack">Attack</button>
+            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0}>←</button>
+            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0}>→</button>
+            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0}>↑</button>
+            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0}>↓</button>
+            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked}>Attack</button>
           </>
         )}
       </div>
 
       <div className="turn-controls">
         {turn === myTeam && !winner && (
-          <button onClick={endTurn} aria-label="End turn">End Turn</button>
+          <button onClick={endTurn}>End Turn</button>
         )}
         {!winner && myTeam && (
-          <button onClick={surrender} aria-label="Surrender">Surrender</button>
+          <button onClick={surrender}>Surrender</button>
         )}
       </div>
 
       {winner && (
-        <div role="alert" className="winner-message">
+        <div className="winner-message">
           Team {winner} wins!
         </div>
       )}
