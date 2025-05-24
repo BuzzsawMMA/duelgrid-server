@@ -9,7 +9,9 @@ app.use(cors());
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: ['http://localhost:3000', 'https://duelgrid-frontend.onrender.com'] },
+  cors: {
+    origin: ['http://localhost:3000', 'https://duelgrid-frontend.onrender.com'],
+  },
 });
 
 const GRID_SIZE = 8;
@@ -36,16 +38,18 @@ const generateTeam = (team, row) =>
     team,
     movesLeft: char.moveRange,
     hasAttacked: false,
+    maxHp: char.hp, // Add maxHp for validation checks
   }));
 
 const rooms = {};
 let roomCounter = 1;
-const waitingQueue = [];
 
-// Helper function to check adjacency
+// Store waiting players by socket.id, not socket object
+const waitingQueue = new Set();
+
 const areAdjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
-// Function: validateAndUpdateGameRoom
+// Your validateAndUpdateGameRoom function unchanged, but I will include it here for completeness
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
   if (!newState || !newState.characters || !newState.turn) {
     console.log('Validation failed: newState or required fields missing');
@@ -59,7 +63,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
   const oldChars = room.gameState.characters;
   const newChars = newState.characters;
 
-  // Check characters one by one
   for (const newChar of newChars) {
     const oldChar = oldChars.find(c => c.id === newChar.id);
     if (!oldChar) {
@@ -96,14 +99,12 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     }
   }
 
-  // Check positions are unique (no overlap)
   const alivePositions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
   if (new Set(alivePositions).size !== alivePositions.length) {
     console.log('Validation failed: Two characters occupy the same position');
     return false;
   }
 
-  // Validate attacks
   const attackers = newChars.filter(nc => {
     const oc = oldChars.find(c => c.id === nc.id);
     return !oc.hasAttacked && nc.hasAttacked && nc.hp > 0;
@@ -118,7 +119,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     for (const oldEnemy of adjacentEnemiesOld) {
       const newEnemy = newChars.find(c => c.id === oldEnemy.id);
 
-      // If the enemy was removed from newChars (i.e., killed)
       if (!newEnemy) {
         if (oldEnemy.hp <= attacker.atk) {
           validAttackFound = true;
@@ -141,7 +141,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     }
   }
 
-  // Validate turn changes
   const turnChanged = newState.turn !== room.gameState.turn;
   if (turnChanged) {
     if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) {
@@ -178,7 +177,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
       }
     }
   } else {
-    // No turn change: ensure no state regression mid-turn
     for (const c of newState.characters) {
       const oldC = oldChars.find(oc => oc.id === c.id);
       if (!oldC) {
@@ -198,14 +196,12 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
     }
   }
 
-  // Determine if there's a winner
   const aliveA = newState.characters.some(c => c.team === 'A' && c.hp > 0);
   const aliveB = newState.characters.some(c => c.team === 'B' && c.hp > 0);
   let winner = null;
   if (!aliveA) winner = 'B';
   if (!aliveB) winner = 'A';
 
-  // Update gameState preserving winner if already set
   const currentWinner = room.gameState.winner || winner;
 
   room.gameState = {
@@ -216,13 +212,52 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 
   console.log(`Validation succeeded for player ${playerTeam}`);
   return true;
-}  // <-- validateAndUpdateGameRoom ends here
+}
 
-
-// SOCKET.IO CONNECTION HANDLER
+// --- SOCKET.IO CONNECTION HANDLER ---
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+
+  // Handle player requesting to join a game
+  socket.on('joinGame', () => {
+    // Check if socket already in waiting queue
+    if (waitingQueue.has(socket.id)) {
+      socket.emit('waitingForOpponent');
+      return;
+    }
+
+    if (waitingQueue.size > 0) {
+      // Get the first waiting socket id
+      const waitingPlayerId = waitingQueue.values().next().value;
+      waitingQueue.delete(waitingPlayerId);
+
+      const roomId = `room${roomCounter++}`;
+      rooms[roomId] = {
+        players: {
+          [waitingPlayerId]: 'A',
+          [socket.id]: 'B',
+        },
+        gameState: {
+          characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
+          turn: 'A',
+          winner: null,
+        },
+      };
+
+      // Join rooms
+      io.sockets.sockets.get(waitingPlayerId)?.join(roomId);
+      socket.join(roomId);
+
+      io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
+      console.log(`Game started between ${waitingPlayerId} (A) and ${socket.id} (B) in ${roomId}`);
+    } else {
+      // Add socket.id to waiting queue
+      waitingQueue.add(socket.id);
+      socket.emit('waitingForOpponent');
+      console.log(`Socket ${socket.id} added to waiting queue`);
+    }
+  });
 
   socket.on('endTurn', () => {
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
@@ -254,36 +289,6 @@ io.on('connection', (socket) => {
     console.log(`Turn ended by player ${playerTeam} in room ${playerRoomId}`);
   });
 
-  socket.on('joinGame', () => {
-  if (waitingQueue.length > 0) {
-    const waitingSocket = waitingQueue.shift();
-    const roomId = `room${roomCounter++}`;
-
-    rooms[roomId] = {
-      players: {
-        [waitingSocket.id]: 'A',
-        [socket.id]: 'B',
-      },
-      gameState: {
-        characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
-        turn: 'A',
-        winner: null,
-      },
-    };
-
-    waitingSocket.join(roomId);
-    socket.join(roomId);
-
-    io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
-    console.log(`Game started between ${waitingSocket.id} (A) and ${socket.id} (B) in ${roomId}`);
-  } else {
-    waitingQueue.push(socket); // ✅ PUSH SOCKET, not socket.id
-    socket.emit('waitingForOpponent');
-    console.log(`Socket ${socket.id} added to waiting queue`);
-  }
-});
-
-
   socket.on('updateGameState', (newState) => {
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
     if (!playerRoomId) {
@@ -305,27 +310,30 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
 
+    // Remove from waiting queue if present
+    if (waitingQueue.has(socket.id)) {
+      waitingQueue.delete(socket.id);
+      console.log(`Socket ${socket.id} removed from waiting queue on disconnect`);
+    }
+
+    // Find room for player and remove them
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
     if (playerRoomId) {
       const room = rooms[playerRoomId];
       delete room.players[socket.id];
 
+      // Inform other players
+      io.to(playerRoomId).emit('playerLeft', { playerId: socket.id });
+
+      // If room is empty, delete it
       if (Object.keys(room.players).length === 0) {
         delete rooms[playerRoomId];
-        console.log(`Room ${playerRoomId} deleted because no players remain`);
-      } else {
-        io.to(playerRoomId).emit('playerLeft', socket.id);
-        console.log(`Player ${socket.id} left room ${playerRoomId}`);
+        console.log(`Room ${playerRoomId} deleted as empty`);
       }
-    } else {
-      // Remove from waiting queue if waiting
-      const idx = waitingQueue.findIndex(s => s.id === socket.id);
-      if (idx !== -1) waitingQueue.splice(idx, 1);
     }
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+server.listen(process.env.PORT || 3001, () => {
+  console.log('Listening on port', process.env.PORT || 3001);
 });
