@@ -1,3 +1,47 @@
+import { io } from 'socket.io-client';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import knightSprite from './sprites/knight.png';
+import archerSprite from './sprites/archer.png';
+import mageSprite from './sprites/mage.png';
+import healerSprite from './sprites/healer.png';
+import warriorSprite from './sprites/warrior.png';
+import rogueSprite from './sprites/rogue.png';
+import summonerSprite from './sprites/summoner.png';
+import paladinSprite from './sprites/paladin.png';
+import './App.css';
+import TutorialModal from './TutorialModal';
+
+const socket = io('https://duelgrid-server.onrender.com', {
+  transports: ['websocket'],
+});
+
+const gridSize = 8;
+
+const baseCharacters = [
+  { name: 'Knight', hp: 100, atk: 30, moveRange: 2, sprite: knightSprite },
+  { name: 'Archer', hp: 80, atk: 25, moveRange: 3, sprite: archerSprite },
+  { name: 'Mage', hp: 70, atk: 40, moveRange: 2, sprite: mageSprite },
+  { name: 'Healer', hp: 90, atk: 10, moveRange: 2, sprite: healerSprite },
+  { name: 'Warrior', hp: 110, atk: 35, moveRange: 1, sprite: warriorSprite },
+  { name: 'Rogue', hp: 75, atk: 30, moveRange: 4, sprite: rogueSprite },
+  { name: 'Summoner', hp: 65, atk: 45, moveRange: 2, sprite: summonerSprite },
+  { name: 'Paladin', hp: 95, atk: 20, moveRange: 1, sprite: paladinSprite },
+];
+
+let idCounter = 1;
+const generateTeam = (team, row) =>
+  baseCharacters.map((c, i) => ({
+    ...c,
+    id: idCounter++,
+    x: i,
+    y: row,
+    team,
+    movesLeft: c.moveRange,
+    hasAttacked: false,
+  }));
+
+const initialCharacters = [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)];
+
 // ... imports unchanged
 
 function App() {
