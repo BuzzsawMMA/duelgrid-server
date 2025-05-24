@@ -255,34 +255,34 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinGame', () => {
-    if (waitingQueue.length > 0) {
-      const waitingSocket = waitingQueue.shift();
-      const roomId = `room${roomCounter++}`;
+  if (waitingQueue.length > 0) {
+    const waitingSocket = waitingQueue.shift();
+    const roomId = `room${roomCounter++}`;
 
-      rooms[roomId] = {
-        players: {
-          [waitingSocket]: 'A',
-          [socket.id]: 'B',
-        },
-        gameState: {
-          characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
-          turn: 'A',
-          winner: null,
-        },
-      };
+    rooms[roomId] = {
+      players: {
+        [waitingSocket.id]: 'A',
+        [socket.id]: 'B',
+      },
+      gameState: {
+        characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
+        turn: 'A',
+        winner: null,
+      },
+    };
 
-      [waitingSocket, socket.id].forEach(sockId => {
-        io.sockets.sockets.get(sockId).join(roomId);
-      });
+    waitingSocket.join(roomId);
+    socket.join(roomId);
 
-      io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
-      console.log(`Game started between ${waitingSocket} (A) and ${socket.id} (B) in ${roomId}`);
-    } else {
-      waitingQueue.push(socket.id);
-      socket.emit('waitingForOpponent');
-      console.log(`Socket ${socket.id} added to waiting queue`);
-    }
-  });
+    io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
+    console.log(`Game started between ${waitingSocket.id} (A) and ${socket.id} (B) in ${roomId}`);
+  } else {
+    waitingQueue.push(socket); // ✅ PUSH SOCKET, not socket.id
+    socket.emit('waitingForOpponent');
+    console.log(`Socket ${socket.id} added to waiting queue`);
+  }
+});
+
 
   socket.on('updateGameState', (newState) => {
     const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
