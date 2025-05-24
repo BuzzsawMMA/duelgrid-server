@@ -70,9 +70,9 @@ function App() {
     socket.on('assignTeam', onAssignTeam);
 
     socket.on('opponentSurrendered', ({ winner }) => {
-    setWinner(winner);
-    alert(`Team ${winner === 'A' ? 'B' : 'A'} has surrendered. You win!`);
-  });
+      setWinner(winner);
+      alert(`Team ${winner === 'A' ? 'B' : 'A'} has surrendered. You win!`);
+    });
 
     return () => {
       socket.off('gameState', onGameState);
@@ -170,7 +170,6 @@ function App() {
 
   return (
     <div className="App">
-      {/* Tutorial modal inserted here */}
       <TutorialModal />
 
       <h1>DuelGrid</h1>
@@ -178,44 +177,42 @@ function App() {
       <h2>Turn: Team {turn}</h2>
 
       <div className="grid" aria-label="Game grid">
-  {Array.from({ length: gridSize }).map((_, y) => (
-    <div key={y} className="row">
-      {Array.from({ length: gridSize }).map((_, x) => {
-        const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
-        return (
-          <div
-            key={x}
-            className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
-            onClick={() => handleTileClick(char)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
-            }}
-          >
-            {char && (
-  <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
-  <img src={char.sprite} alt={char.name} className="sprite" />
-  <div className="health-bar-wrapper">
-    <div
-      className="health-bar"
-      style={{
-        width: `${(char.hp / baseCharacters.find(c => c.name === char.name).hp) * 100}%`,
-        backgroundColor:
-          char.hp > 50 ? 'green' : char.hp > 20 ? 'orange' : 'red',
-      }}
-    />
-  </div>
-</div>
-
-)}
-
+        {Array.from({ length: gridSize }).map((_, y) => (
+          <div key={y} className="row">
+            {Array.from({ length: gridSize }).map((_, x) => {
+              const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
+              return (
+                <div
+                  key={x}
+                  className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''}`}
+                  onClick={() => handleTileClick(char)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') handleTileClick(char);
+                  }}
+                >
+                  {char && (
+                    <div className="character" style={{ opacity: char.team === myTeam ? 1 : 0.5 }}>
+                      <img src={char.sprite} alt={char.name} className="sprite" />
+                      <div className="health-bar-wrapper">
+                        <div
+                          className="health-bar"
+                          style={{
+                            width: `${(char.hp / baseCharacters.find(c => c.name === char.name).hp) * 100}%`,
+                            backgroundColor:
+                              char.hp > 50 ? 'green' : char.hp > 20 ? 'orange' : 'red',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
-    </div>
-  ))}
-</div>
+        ))}
+      </div>
 
       {selectedChar && selectedChar.team === myTeam ? (
         <div className="character-stats" aria-live="polite">
@@ -231,55 +228,21 @@ function App() {
       <div className="controls">
         {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
           <>
-            <button
-              onClick={() => moveCharacter(selectedId, -1, 0)}
-              disabled={selectedChar.movesLeft <= 0}
-              aria-label="Move left"
-            >
-              ←
-            </button>
-            <button
-              onClick={() => moveCharacter(selectedId, 1, 0)}
-              disabled={selectedChar.movesLeft <= 0}
-              aria-label="Move right"
-            >
-              →
-            </button>
-            <button
-              onClick={() => moveCharacter(selectedId, 0, -1)}
-              disabled={selectedChar.movesLeft <= 0}
-              aria-label="Move up"
-            >
-              ↑
-            </button>
-            <button
-              onClick={() => moveCharacter(selectedId, 0, 1)}
-              disabled={selectedChar.movesLeft <= 0}
-              aria-label="Move down"
-            >
-              ↓
-            </button>
-            <button
-              onClick={() => attack(selectedId)}
-              disabled={selectedChar.hasAttacked}
-              aria-label="Attack"
-            >
-              Attack
-            </button>
+            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0} aria-label="Move left">←</button>
+            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0} aria-label="Move right">→</button>
+            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0} aria-label="Move up">↑</button>
+            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0} aria-label="Move down">↓</button>
+            <button onClick={() => attack(selectedId)} disabled={selectedChar.hasAttacked} aria-label="Attack">Attack</button>
           </>
         )}
       </div>
 
       <div className="turn-controls">
         {turn === myTeam && !winner && (
-          <button onClick={endTurn} aria-label="End turn">
-            End Turn
-          </button>
+          <button onClick={endTurn} aria-label="End turn">End Turn</button>
         )}
         {!winner && myTeam && (
-          <button onClick={surrender} aria-label="Surrender">
-            Surrender
-          </button>
+          <button onClick={surrender} aria-label="Surrender">Surrender</button>
         )}
       </div>
 
