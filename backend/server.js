@@ -48,262 +48,234 @@ const waitingQueue = new Set();
 
 const areAdjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
-// validateAndUpdateGameRoom function as you provided (unchanged)...
-
 function validateAndUpdateGameRoom(room, newState, playerTeam) {
-  if (!newState || !newState.characters || !newState.turn) {
-    console.log('Validation failed: newState or required fields missing');
-    return false;
-  }
-  if (playerTeam !== room.gameState.turn) {
-    console.log(`Validation failed: Not player ${playerTeam}'s turn, current turn is ${room.gameState.turn}`);
-    return false;
-  }
+  const prevState = room.gameState;
 
-  const oldChars = room.gameState.characters;
-  const newChars = newState.characters;
+  if (!newState || !newState.characters) return false;
 
-  for (const newChar of newChars) {
-    const oldChar = oldChars.find(c => c.id === newChar.id);
-    if (!oldChar) {
-      console.log(`Validation failed: Character ID ${newChar.id} not found`);
-      return false;
-    }
-    if (newChar.team !== oldChar.team) {
-      console.log('Validation failed: Character team mismatch');
-      return false;
-    }
-    if (newChar.hp > oldChar.hp) {
-      if (newChar.hp > oldChar.maxHp) {
-        console.log('Validation failed: hp exceeds maxHp');
-        return false;
-      }
-    }
-    if (newChar.movesLeft > oldChar.movesLeft) {
-      console.log('Validation failed: movesLeft increased');
-      return false;
+  // Ensure characters array length unchanged
+  if (newState.characters.length !== prevState.characters.length) return false;
+
+  // Check winner state is unchanged (only set by server)
+  if (newState.winner !== prevState.winner) return false;
+
+  // Validate all characters
+  for (let i = 0; i < newState.characters.length; i++) {
+    const prevChar = prevState.characters[i];
+    const newChar = newState.characters[i];
+
+    if (prevChar.id !== newChar.id) return false;
+    if (prevChar.team !== newChar.team) return false;
+
+    // HP can't increase beyond maxHp or go below 0
+    if (newChar.hp > newChar.maxHp || newChar.hp < 0) return false;
+
+    // x and y must be within grid bounds
+    if (newChar.x < 0 || newChar.x >= GRID_SIZE || newChar.y < 0 || newChar.y >= GRID_SIZE) return false;
+
+    // movesLeft cannot exceed moveRange
+    if (newChar.movesLeft > newChar.moveRange) return false;
+
+    // Validate no illegal move: no teleporting more than movesLeft
+    const dist = Math.abs(newChar.x - prevChar.x) + Math.abs(newChar.y - prevChar.y);
+    if (dist > prevChar.movesLeft) return false;
+
+    // Prevent changing hp of other team characters directly
+    if (newChar.team !== playerTeam) {
+      if (newChar.hp !== prevChar.hp) return false;
     }
 
-    const distMoved = Math.abs(newChar.x - oldChar.x) + Math.abs(newChar.y - oldChar.y);
-    if (distMoved > oldChar.movesLeft) {
-      console.log('Validation failed: Character moved too far');
-      return false;
-    }
-    if (newChar.movesLeft !== oldChar.movesLeft - distMoved) {
-      console.log('Validation failed: movesLeft not decreased correctly');
-      return false;
-    }
-    if (oldChar.hasAttacked && !newChar.hasAttacked) {
-      console.log('Validation failed: Attack status reverted');
-      return false;
-    }
+    // Validate hasAttacked flag logic (cannot reset from true to false mid-turn)
+    if (prevChar.hasAttacked && !newChar.hasAttacked) return false;
   }
 
-  const alivePositions = newChars.filter(c => c.hp > 0).map(c => `${c.x},${c.y}`);
-  if (new Set(alivePositions).size !== alivePositions.length) {
-    console.log('Validation failed: Two characters occupy the same position');
-    return false;
-  }
-
-  const attackers = newChars.filter(nc => {
-    const oc = oldChars.find(c => c.id === nc.id);
-    return !oc.hasAttacked && nc.hasAttacked && nc.hp > 0;
-  });
-
-  for (const attacker of attackers) {
-    const oldAttacker = oldChars.find(c => c.id === attacker.id);
-    const adjacentEnemiesOld = oldChars.filter(c => c.team !== attacker.team && areAdjacent(c, oldAttacker) && c.hp > 0);
-    const adjacentEnemiesNew = newChars.filter(c => c.team !== attacker.team && areAdjacent(c, attacker) && c.hp > 0);
-
-    let validAttackFound = false;
-    for (const oldEnemy of adjacentEnemiesOld) {
-      const newEnemy = newChars.find(c => c.id === oldEnemy.id);
-
-      if (!newEnemy) {
-        if (oldEnemy.hp <= attacker.atk) {
-          validAttackFound = true;
-          break;
-        } else {
-          continue;
-        }
-      }
-
-      const hpDiff = oldEnemy.hp - newEnemy.hp;
-      if (hpDiff === attacker.atk || (oldEnemy.hp > 0 && newEnemy.hp <= 0 && oldEnemy.hp <= attacker.atk)) {
-        validAttackFound = true;
-        break;
-      }
-    }
-
-    if (!validAttackFound) {
-      console.log('Validation failed: No valid enemy attacked');
-      return false;
+  // Ensure only current player's characters moved or attacked
+  for (let i = 0; i < newState.characters.length; i++) {
+    const prevChar = prevState.characters[i];
+    const newChar = newState.characters[i];
+    if (prevChar.team !== playerTeam) {
+      // No movement or attack state change allowed for opponent chars
+      if (prevChar.x !== newChar.x || prevChar.y !== newChar.y) return false;
+      if (prevChar.hasAttacked !== newChar.hasAttacked) return false;
+      if (prevChar.movesLeft !== newChar.movesLeft) return false;
     }
   }
 
-  const turnChanged = newState.turn !== room.gameState.turn;
-  if (turnChanged) {
-    if (newState.turn !== (room.gameState.turn === 'A' ? 'B' : 'A')) {
-      console.log('Validation failed: Turn changed incorrectly');
-      return false;
-    }
+  // Validate attacks: at most one opponent's HP reduced by atk value of player's character adjacent to it
+  let attackCount = 0;
+  for (let i = 0; i < newState.characters.length; i++) {
+    const prevChar = prevState.characters[i];
+    const newChar = newState.characters[i];
+    if (prevChar.hp > newChar.hp) {
+      // HP decreased - check it matches an attack from player's character adjacent to this one
+      const damage = prevChar.hp - newChar.hp;
 
-    for (const c of newState.characters) {
-      const oldC = oldChars.find(oc => oc.id === c.id);
-      if (!oldC) {
-        console.log('Validation failed: Character missing during turn change');
-        return false;
-      }
+      // Damage must be positive
+      if (damage <= 0) return false;
 
-      if (c.team === newState.turn) {
-        const baseChar = BASE_CHARACTERS.find(bc => bc.name === c.name);
-        if (!baseChar) {
-          console.log('Validation failed: Base character not found');
-          return false;
-        }
-        if (c.movesLeft !== baseChar.moveRange || c.hasAttacked !== false) {
-          console.log('Validation failed: New turn characters not reset properly');
-          return false;
-        }
-      } else {
-        if (c.movesLeft > oldC.movesLeft) {
-          console.log('Validation failed: Old team movesLeft increased');
-          return false;
-        }
-        if (oldC.hasAttacked && !c.hasAttacked) {
-          console.log('Validation failed: Old team attack status reverted');
-          return false;
-        }
-      }
+      // Find player's character that attacked and verify adjacency and hasAttacked flag
+      const attacker = newState.characters.find((c) =>
+        c.team === playerTeam &&
+        c.hasAttacked &&
+        areAdjacent(c, newChar) &&
+        c.movesLeft === prevState.characters.find(pc => pc.id === c.id).movesLeft &&
+        c.hp === prevState.characters.find(pc => pc.id === c.id).hp &&
+        damage === c.atk
+      );
+      if (!attacker) return false;
+
+      attackCount++;
     }
+  }
+  if (attackCount > 1) return false; // only one attack allowed per turn
+
+  // Validate turn toggle
+  if (newState.turn !== prevState.turn) {
+    // Only allow turn to switch if all player's characters have 0 movesLeft and hasAttacked true/false states respected
+    if (newState.turn === playerTeam) return false; // player can't switch to their own turn again
+
+    const playerChars = newState.characters.filter(c => c.team === playerTeam);
+    if (!playerChars.every(c => c.movesLeft === 0)) return false;
   } else {
-    for (const c of newState.characters) {
-      const oldC = oldChars.find(oc => oc.id === c.id);
-      if (!oldC) {
-        console.log('Validation failed: Character missing');
-        return false;
-      }
-      if (c.team === room.gameState.turn) {
-        if (c.movesLeft > oldC.movesLeft) {
-          console.log('Validation failed: movesLeft increased mid-turn');
-          return false;
-        }
-        if (oldC.hasAttacked && !c.hasAttacked) {
-          console.log('Validation failed: Attack status reverted mid-turn');
-          return false;
-        }
-      }
-    }
+    // Turn must not change during player's turn
+    if (newState.turn !== prevState.turn) return false;
   }
 
-  const aliveA = newState.characters.some(c => c.team === 'A' && c.hp > 0);
-  const aliveB = newState.characters.some(c => c.team === 'B' && c.hp > 0);
-  let winner = null;
-  if (!aliveA) winner = 'B';
-  if (!aliveB) winner = 'A';
-
-  const currentWinner = room.gameState.winner || winner;
-
-  room.gameState = {
-    characters: newState.characters.map(c => ({ ...c })),
-    turn: newState.turn,
-    winner: currentWinner,
-  };
-
-  console.log(`Validation succeeded for player ${playerTeam}`);
+  // All validations passed, update the room state
+  room.gameState = newState;
   return true;
 }
-
-// --- SOCKET.IO CONNECTION HANDLER ---
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('joinGame', () => {
-    console.log('Join game requested by', socket.id);
+    console.log(`joinGame received from ${socket.id}`);
+
+    if (waitingQueue.has(socket.id)) {
+      console.log(`Socket ${socket.id} already in waiting queue`);
+      socket.emit('waitingForOpponent');
+      return;
+    }
 
     if (waitingQueue.size > 0) {
-      // Pair with waiting player
-      const waitingPlayerId = [...waitingQueue][0];
+      const waitingPlayerId = waitingQueue.values().next().value;
       waitingQueue.delete(waitingPlayerId);
 
-      const roomId = `room-${roomCounter++}`;
-      const teamA = generateTeam('A', 0);
-      const teamB = generateTeam('B', GRID_SIZE - 1);
+      const waitingSocket = io.sockets.sockets.get(waitingPlayerId);
+      if (!waitingSocket) {
+        console.log(`Waiting socket ${waitingPlayerId} not found in sockets map`);
+        // Add current socket to waitingQueue instead and inform them
+        waitingQueue.add(socket.id);
+        socket.emit('waitingForOpponent');
+        return;
+      }
 
-      const initialGameState = {
-        characters: [...teamA, ...teamB],
-        turn: 'A',
-        winner: null,
-      };
-
+      const roomId = `room${roomCounter++}`;
       rooms[roomId] = {
-        players: [waitingPlayerId, socket.id],
-        gameState: initialGameState,
+        players: {
+          [waitingPlayerId]: 'A',
+          [socket.id]: 'B',
+        },
+        gameState: {
+          characters: [...generateTeam('A', 0), ...generateTeam('B', GRID_SIZE - 1)],
+          turn: 'A',
+          winner: null,
+        },
       };
 
-      // Join both sockets to the room
-      io.sockets.sockets.get(waitingPlayerId)?.join(roomId);
+      waitingSocket.join(roomId);
       socket.join(roomId);
 
-      // Emit assignTeam individually
-      io.to(waitingPlayerId).emit('assignTeam', 'A');
-      io.to(socket.id).emit('assignTeam', 'B');
+      // Assign teams explicitly
+      waitingSocket.emit('assignTeam', 'A');
+      socket.emit('assignTeam', 'B');
 
-      // Emit gameStart event to both players with initial game state
-      io.to(roomId).emit('gameStart', { roomId, gameState: initialGameState });
+      io.to(roomId).emit('gameStart', { roomId, gameState: rooms[roomId].gameState });
 
-      console.log(`Started game in ${roomId} between ${waitingPlayerId} (Team A) and ${socket.id} (Team B)`);
+      console.log(`Game started in room ${roomId} between ${waitingPlayerId}(A) and ${socket.id}(B)`);
+
     } else {
-      // No waiting players, add this one to waiting queue
       waitingQueue.add(socket.id);
       socket.emit('waitingForOpponent');
-      console.log(`Player ${socket.id} waiting for opponent`);
+      console.log(`Socket ${socket.id} added to waiting queue`);
     }
   });
 
-  socket.on('gameUpdate', ({ roomId, newState, playerTeam }) => {
-    if (!rooms[roomId]) {
-      console.log('Invalid roomId in gameUpdate');
+  socket.on('endTurn', () => {
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) {
+      console.log(`endTurn: no room found for socket ${socket.id}`);
       return;
     }
-    const room = rooms[roomId];
-    if (!room.players.includes(socket.id)) {
-      console.log('Player not in room on gameUpdate');
+
+    const room = rooms[playerRoomId];
+    const playerTeam = room.players[socket.id];
+
+    if (room.gameState.turn !== playerTeam) {
+      console.log(`endTurn: it's not player ${playerTeam}'s turn`);
       return;
     }
+
+    room.gameState.turn = playerTeam === 'A' ? 'B' : 'A';
+    room.gameState.characters = room.gameState.characters.map((char) =>
+      char.team === room.gameState.turn
+        ? { ...char, movesLeft: char.moveRange, hasAttacked: false }
+        : char
+    );
+
+    io.to(playerRoomId).emit('turnEnded', { gameState: room.gameState });
+    console.log(`Turn ended in room ${playerRoomId}, now it's team ${room.gameState.turn}'s turn`);
+  });
+
+  socket.on('updateGameState', (newState) => {
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) {
+      console.log(`updateGameState: no room found for socket ${socket.id}`);
+      return;
+    }
+
+    const room = rooms[playerRoomId];
+    const playerTeam = room.players[socket.id];
+
+    if (room.gameState.turn !== playerTeam) {
+      console.log(`updateGameState: not player ${playerTeam}'s turn`);
+      return;
+    }
+
     const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
-    if (valid) {
-      // Broadcast the updated game state to the room except the sender (optional)
-      socket.to(roomId).emit('gameUpdate', room.gameState);
-      // You could also emit to all to keep both synced
-      // io.to(roomId).emit('gameUpdate', room.gameState);
-    } else {
-      console.log('Invalid game update from player', playerTeam);
-      socket.emit('invalidMove');
+    if (!valid) {
+      console.log('Invalid game state update attempt');
+      return;
     }
+
+    io.to(playerRoomId).emit('gameStateUpdated', { gameState: room.gameState });
+    console.log(`Game state updated in room ${playerRoomId} by player ${playerTeam}`);
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    // Remove from waiting queue if there
-    waitingQueue.delete(socket.id);
-    // Remove from any rooms and notify opponent if desired
-    for (const [roomId, room] of Object.entries(rooms)) {
-      if (room.players.includes(socket.id)) {
-        // Notify other player about disconnect
-        room.players.forEach((playerId) => {
-          if (playerId !== socket.id) {
-            io.to(playerId).emit('opponentDisconnected');
-          }
-        });
-        delete rooms[roomId];
-        console.log(`Room ${roomId} deleted due to disconnect`);
-        break;
+
+    if (waitingQueue.has(socket.id)) {
+      waitingQueue.delete(socket.id);
+      console.log(`Socket ${socket.id} removed from waiting queue on disconnect`);
+    }
+
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (playerRoomId) {
+      const room = rooms[playerRoomId];
+      delete room.players[socket.id];
+      io.to(playerRoomId).emit('playerLeft', { playerId: socket.id });
+
+      if (Object.keys(room.players).length === 0) {
+        delete rooms[playerRoomId];
+        console.log(`Room ${playerRoomId} deleted as empty`);
       }
     }
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+const PORT = 3001;
+server.listen(PORT, () => {
+  console.log(`Listening on port ${PORT}`);
+});
