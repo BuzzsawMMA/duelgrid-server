@@ -69,8 +69,12 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
       return false;
     }
     if (newChar.hp > oldChar.hp) {
-      console.log('Validation failed: HP increased');
-      return false;
+      if (newChar.hp > oldChar.maxHp) {
+    console.log('Validation failed: hp exceeds maxHp');
+    return false;
+  }
+}
+
     }
     if (newChar.movesLeft > oldChar.movesLeft) {
       console.log('Validation failed: movesLeft increased');
@@ -215,7 +219,6 @@ function validateAndUpdateGameRoom(room, newState, playerTeam) {
 
   console.log(`Validation succeeded for player ${playerTeam}`);
   return true;
-}
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
