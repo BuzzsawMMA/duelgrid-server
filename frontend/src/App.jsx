@@ -38,7 +38,7 @@ const generateTeam = (team, row) =>
     team,
     movesLeft: c.moveRange,
     hasAttacked: false,
-    hasHealed: false, // Added to track healing
+    hasHealed: false, // Track heal usage
   }));
 
 const initialCharacters = [...generateTeam('A', 0), ...generateTeam('B', gridSize - 1)];
@@ -49,8 +49,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [turn, setTurn] = useState('A');
   const [winner, setWinner] = useState(null);
-  const [isAttackMode, setIsAttackMode] = useState(false);
-  const [isHealMode, setIsHealMode] = useState(false);
+  const [mode, setMode] = useState(null); // null | 'attack' | 'heal'
 
   const turnRef = useRef(turn);
   useEffect(() => {
@@ -62,8 +61,7 @@ function App() {
     setTurn(newTurn);
     setWinner(newWinner);
     setSelectedId(null);
-    setIsAttackMode(false);
-    setIsHealMode(false);
+    setMode(null);
   }, []);
 
   const onAssignTeam = useCallback((team) => {
@@ -97,11 +95,10 @@ function App() {
 
   const selectedChar = characters.find((c) => c.id === selectedId);
 
-  // Handle tile clicks for move, attack, and heal modes
   const handleTileClick = (char) => {
     if (!char) return;
 
-    if (isAttackMode && selectedChar && selectedChar.team === myTeam && turn === myTeam) {
+    if (mode === 'attack' && selectedChar && selectedChar.team === myTeam && turn === myTeam) {
       const isTargetInRange =
         Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
         char.hp > 0 &&
@@ -119,25 +116,23 @@ function App() {
         });
         setCharacters(updatedChars);
         emitGameState(updatedChars);
-        setIsAttackMode(false);
-        setSelectedId(null);
+        setMode(null);
         return;
       }
     }
 
-    if (isHealMode && selectedChar && selectedChar.team === myTeam && selectedChar.name === 'Healer' && turn === myTeam) {
-      const isTargetInRange =
+    if (mode === 'heal' && selectedChar && selectedChar.team === myTeam && turn === myTeam && selectedChar.name === 'Healer') {
+      const isAllyInRange =
         Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1 &&
         char.hp > 0 &&
         char.team === myTeam;
 
-      if (isTargetInRange && !selectedChar.hasHealed) {
-        const healAmount = 30; // example heal value
+      if (isAllyInRange && !selectedChar.hasHealed) {
+        const maxHp = baseCharacters.find((bc) => bc.name === char.name).hp;
+        const healAmount = 25; // Fixed heal amount, can be adjusted
         const updatedChars = characters.map((c) => {
           if (c.id === char.id) {
-            // Heal but not above max HP
-            const baseMaxHp = baseCharacters.find(bc => bc.name === c.name).hp;
-            return { ...c, hp: Math.min(baseMaxHp, c.hp + healAmount) };
+            return { ...c, hp: Math.min(maxHp, c.hp + healAmount) };
           }
           if (c.id === selectedChar.id) {
             return { ...c, hasHealed: true };
@@ -146,16 +141,14 @@ function App() {
         });
         setCharacters(updatedChars);
         emitGameState(updatedChars);
-        setIsHealMode(false);
-        setSelectedId(null);
+        setMode(null);
         return;
       }
     }
 
     if (char.team === myTeam && turn === myTeam && char.hp > 0) {
       setSelectedId(char.id);
-      setIsAttackMode(false);
-      setIsHealMode(false);
+      setMode(null); // Cancel attack/heal mode when selecting a new ally
     }
   };
 
@@ -181,23 +174,21 @@ function App() {
 
   const initiateAttackMode = () => {
     if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam || selectedChar.hasAttacked) return;
-    setIsAttackMode(true);
-    setIsHealMode(false);
+    setMode('attack');
   };
 
   const initiateHealMode = () => {
-    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam || selectedChar.hasHealed) return;
+    if (!selectedChar || selectedChar.team !== myTeam || turn !== myTeam) return;
     if (selectedChar.name !== 'Healer') return;
-    setIsHealMode(true);
-    setIsAttackMode(false);
+    if (selectedChar.hasHealed) return;
+    setMode('heal');
   };
 
   const endTurn = () => {
     if (turn !== myTeam || winner !== null) return;
     socket.emit('endTurn');
     setSelectedId(null);
-    setIsAttackMode(false);
-    setIsHealMode(false);
+    setMode(null);
   };
 
   const surrender = () => {
@@ -219,15 +210,15 @@ function App() {
           <div key={y} className="row">
             {Array.from({ length: gridSize }).map((_, x) => {
               const char = characters.find((c) => c.x === x && c.y === y && c.hp > 0);
-              const isTargetableAttack =
-                isAttackMode &&
+              const isAttackTargetable =
+                mode === 'attack' &&
                 selectedChar &&
                 char &&
                 char.team !== myTeam &&
                 Math.abs(char.x - selectedChar.x) + Math.abs(char.y - selectedChar.y) === 1;
 
-              const isTargetableHeal =
-                isHealMode &&
+              const isHealTargetable =
+                mode === 'heal' &&
                 selectedChar &&
                 char &&
                 char.team === myTeam &&
@@ -237,8 +228,8 @@ function App() {
                 <div
                   key={x}
                   className={`tile ${char ? 'occupied' : ''} ${selectedId === char?.id ? 'selected' : ''} ${
-                    isTargetableAttack || isTargetableHeal ? 'targetable' : ''
-                  }`}
+                    isAttackTargetable ? 'targetable-attack' : ''
+                  } ${isHealTargetable ? 'targetable-heal' : ''}`}
                   onClick={() => handleTileClick(char)}
                 >
                   {char && (
@@ -269,58 +260,40 @@ function App() {
           <p>HP: {selectedChar.hp}</p>
           <p>ATK: {selectedChar.atk}</p>
           <p>Moves Left: {selectedChar.movesLeft}</p>
-          <p>Has Attacked: {selectedChar.hasAttacked ? 'Yes' : 'No'}</p>
-          {selectedChar.name === 'Healer' && (
-            <p>Has Healed: {selectedChar.hasHealed ? 'Yes' : 'No'}</p>
-          )}
+          {selectedChar.name === 'Healer' && <p>Heal Used: {selectedChar.hasHealed ? 'Yes' : 'No'}</p>}
+          <p>Attack Used: {selectedChar.hasAttacked ? 'Yes' : 'No'}</p>
         </div>
       ) : (
-        <p>{turn === myTeam ? 'Select a character to move or attack.' : "Waiting for opponent's turn..."}</p>
+        <p>{turn === myTeam ? 'Select a character to move or attack/heal.' : "Waiting for opponent's turn..."}</p>
       )}
 
       <div className="controls">
         {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
           <>
-            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0}>
-              ←
-            </button>
-            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0}>
-              →
-            </button>
-            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0}>
-              ↑
-            </button>
-            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0}>
-              ↓
-            </button>
-
-            <button onClick={initiateAttackMode} disabled={selectedChar.hasAttacked}>
-              {isAttackMode ? 'Cancel Attack' : 'Attack'}
-            </button>
-
+            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0}>←</button>
+            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0}>→</button>
+            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0}>↑</button>
+            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0}>↓</button>
+            <button onClick={initiateAttackMode} disabled={selectedChar.hasAttacked}>Attack</button>
             {selectedChar.name === 'Healer' && (
-              <button onClick={initiateHealMode} disabled={selectedChar.hasHealed}>
-                {isHealMode ? 'Cancel Heal' : 'Heal'}
-              </button>
+              <button onClick={initiateHealMode} disabled={selectedChar.hasHealed}>Heal</button>
             )}
           </>
         )}
+      </div>
 
-        {/* End Turn button visible whenever it's your turn, no character selection needed */}
+      <div className="turn-controls">
         {turn === myTeam && !winner && (
           <button onClick={endTurn}>End Turn</button>
         )}
-
-        {/* Surrender button always visible if you have a team */}
-        {myTeam && !winner && (
+        {!winner && myTeam && (
           <button onClick={surrender}>Surrender</button>
         )}
       </div>
 
       {winner && (
         <div className="winner-message">
-          <h2>{winner === myTeam ? 'You Win!' : 'You Lose!'}</h2>
-          <button onClick={() => window.location.reload()}>Restart</button>
+          Team {winner} wins!
         </div>
       )}
     </div>

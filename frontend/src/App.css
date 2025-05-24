@@ -116,14 +116,12 @@ button:hover {
   transition: width 0.3s ease;
 }
 
-.tile.targetable {
-  border: 2px solid red;
-  cursor: pointer;
+/* Existing tile styles... */
+
+.tile.targetable-attack {
+  outline: 3px solid red;
 }
-.tile.healable {
-  background-color: #006400; /* dark green highlight for heal */
-}
-.tile.heal-targetable {
-  border: 2px solid green;
-  cursor: pointer;
+
+.tile.targetable-heal {
+  outline: 3px solid limegreen;
 }
