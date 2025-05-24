@@ -82,6 +82,11 @@ function App() {
     };
   }, [onGameState, onAssignTeam]);
 
+  // <<< ADD THIS useEffect to emit 'joinGame' once on mount >>>
+  useEffect(() => {
+    socket.emit('joinGame');
+  }, []);
+
   const emitGameState = useCallback(
     (updatedChars) => {
       socket.emit('updateGame', {
@@ -260,42 +265,37 @@ function App() {
           <p>HP: {selectedChar.hp}</p>
           <p>ATK: {selectedChar.atk}</p>
           <p>Moves Left: {selectedChar.movesLeft}</p>
-          {selectedChar.name === 'Healer' && <p>Heal Used: {selectedChar.hasHealed ? 'Yes' : 'No'}</p>}
-          <p>Attack Used: {selectedChar.hasAttacked ? 'Yes' : 'No'}</p>
+          <button onClick={() => moveCharacter(selectedChar.id, 0, -1)}>Move Up</button>
+          <button onClick={() => moveCharacter(selectedChar.id, 0, 1)}>Move Down</button>
+          <button onClick={() => moveCharacter(selectedChar.id, -1, 0)}>Move Left</button>
+          <button onClick={() => moveCharacter(selectedChar.id, 1, 0)}>Move Right</button>
+          <br />
+          <button onClick={initiateAttackMode} disabled={selectedChar.hasAttacked || mode === 'heal'}>
+            Attack
+          </button>
+          <button
+            onClick={initiateHealMode}
+            disabled={
+              selectedChar.name !== 'Healer' || selectedChar.hasHealed || mode === 'attack'
+            }
+          >
+            Heal
+          </button>
         </div>
       ) : (
-        <p>{turn === myTeam ? 'Select a character to move or attack/heal.' : "Waiting for opponent's turn..."}</p>
+        <p>Select one of your units to see stats</p>
       )}
-
-      <div className="controls">
-        {selectedChar && selectedChar.team === myTeam && turn === myTeam && !winner && (
-          <>
-            <button onClick={() => moveCharacter(selectedId, -1, 0)} disabled={selectedChar.movesLeft <= 0}>←</button>
-            <button onClick={() => moveCharacter(selectedId, 1, 0)} disabled={selectedChar.movesLeft <= 0}>→</button>
-            <button onClick={() => moveCharacter(selectedId, 0, -1)} disabled={selectedChar.movesLeft <= 0}>↑</button>
-            <button onClick={() => moveCharacter(selectedId, 0, 1)} disabled={selectedChar.movesLeft <= 0}>↓</button>
-            <button onClick={initiateAttackMode} disabled={selectedChar.hasAttacked}>Attack</button>
-            {selectedChar.name === 'Healer' && (
-              <button onClick={initiateHealMode} disabled={selectedChar.hasHealed}>Heal</button>
-            )}
-          </>
-        )}
-      </div>
 
       <div className="turn-controls">
-        {turn === myTeam && !winner && (
-          <button onClick={endTurn}>End Turn</button>
-        )}
-        {!winner && myTeam && (
-          <button onClick={surrender}>Surrender</button>
-        )}
+        <button onClick={endTurn} disabled={turn !== myTeam || winner !== null}>
+          End Turn
+        </button>
+        <button onClick={surrender} disabled={!myTeam || winner !== null}>
+          Surrender
+        </button>
       </div>
 
-      {winner && (
-        <div className="winner-message">
-          Team {winner} wins!
-        </div>
-      )}
+      {winner && <h2>Game Over! Team {winner} wins!</h2>}
     </div>
   );
 }
