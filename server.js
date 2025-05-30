@@ -463,16 +463,23 @@ socket.onAny((event, ...args) => {
   socket.on('disconnect', () => {
   console.log('🔌 Player disconnected:', socket.id);
 
-  // Remove player from rooms and mappings
-  fullyRemovePlayer(socket);
+  const roomId = findRoomOfPlayer(socket.id);
+  if (roomId && rooms[roomId]) {
+    const room = rooms[roomId];
+    const opponentId = Object.keys(room.players).find(id => id !== socket.id);
 
-  // Remove from waitingQueue if present
-  const index = waitingQueue.indexOf(socket.id);
-  if (index !== -1) {
-    waitingQueue.splice(index, 1);
-    console.log(`🧹 Removed ${socket.id} from queue on disconnect`);
+    if (opponentId) {
+      io.to(roomId).emit('gameOver', { winnerId: opponentId });
+      io.to(opponentId).emit('gameEnded');
+      console.log(`🏆 ${opponentId} wins because ${socket.id} disconnected`);
+    }
+
+    delete rooms[roomId];
   }
+
+  fullyRemovePlayer(socket);
 });
+
 
 
   socket.on('surrender', () => {
