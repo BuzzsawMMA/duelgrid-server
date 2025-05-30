@@ -284,7 +284,7 @@ oldChar.hp = newChar.hp;
 }
 
 
-function removePlayerFromRooms(socketId) {
+function removePlayerFromRooms(socket, socketId) {
   for (const [roomId, room] of Object.entries(rooms)) {
     if (room.players[socketId]) {
       delete room.players[socketId];
@@ -294,10 +294,11 @@ function removePlayerFromRooms(socketId) {
       } else {
         console.log(`❌ Removed ${socketId} from room ${roomId}`);
       }
-      io.sockets.sockets.get(socketId)?.leave(roomId);
+      socket.leave(roomId); // Directly on socket
     }
   }
 }
+
 
 
 
@@ -322,6 +323,9 @@ io.on('connection', (socket) => {
         otherSocket.leave(oldRoomId);
         otherSocket.emit('opponentLeft');
         console.log(`🚪 ${otherPlayerId} also left old room ${oldRoomId}`);
+        removePlayerFromRooms(socket, socket.id);
+        if (otherSocket) removePlayerFromRooms(otherSocket, otherPlayerId);
+
 
         // Requeue opponent if not already
         if (!waitingQueue.includes(otherPlayerId)) {
