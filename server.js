@@ -300,46 +300,53 @@ function removePlayerFromRooms(socketId) {
 io.on('connection', (socket) => {
   console.log(`✅ New connection: ${socket.id}`);
 
+  // Add new player to queue
   waitingQueue.push(socket.id);
-  console.log(`Player ${socket.id} added to waiting queue`);
+  console.log(`⏳ Player ${socket.id} added to waiting queue`);
   tryToMatchPlayers();
 
+  // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
-  console.log(`🔁 ${socket.id} clicked Play Again`);
+    console.log(`🔁 ${socket.id} clicked Play Again`);
 
-  const oldRoomId = players[socket.id];
-  if (oldRoomId && rooms[oldRoomId]) {
-    socket.leave(oldRoomId);
-    console.log(`➡️ ${socket.id} left old room ${oldRoomId}`);
+    const oldRoomId = players[socket.id];
 
-    // Find other player
-    const otherPlayerId = Object.keys(rooms[oldRoomId].players).find(id => id !== socket.id);
-    const otherSocket = io.sockets.sockets.get(otherPlayerId);
+    if (oldRoomId && rooms[oldRoomId]) {
+      socket.leave(oldRoomId);
+      console.log(`➡️ ${socket.id} left old room ${oldRoomId}`);
 
-    if (otherSocket) {
-      otherSocket.leave(oldRoomId);
-      otherSocket.emit('opponentLeft'); // Or emit a 'playAgainRequest' event instead
-      // Add the opponent back to queue to rematch
-      if (!waitingQueue.includes(otherPlayerId)) {
-        waitingQueue.push(otherPlayerId);
-        console.log(`⏳ ${otherPlayerId} re-added to queue`);
+      // Find and handle the opponent
+      const otherPlayerId = Object.keys(rooms[oldRoomId].players).find(id => id !== socket.id);
+      const otherSocket = io.sockets.sockets.get(otherPlayerId);
+
+      if (otherSocket) {
+        otherSocket.leave(oldRoomId);
+        otherSocket.emit('opponentLeft');
+        console.log(`🚪 ${otherPlayerId} also left old room ${oldRoomId}`);
+
+        // Requeue opponent if not already
+        if (!waitingQueue.includes(otherPlayerId)) {
+          waitingQueue.push(otherPlayerId);
+          console.log(`⏳ ${otherPlayerId} re-added to queue`);
+        }
+
+        delete players[otherPlayerId];
       }
-      delete players[otherPlayerId];
+
+      // Clean up room tracking
+      delete rooms[oldRoomId];
+      delete players[socket.id];
+      console.log(`🧹 Cleaned up room ${oldRoomId}`);
     }
 
-    // Clean up tracking
-    delete rooms[oldRoomId];
-    delete players[socket.id];
-    console.log(`🧹 Cleaned up room ${oldRoomId}`);
-  }
+    // Re-add this player to the queue if not already
+    if (!waitingQueue.includes(socket.id)) {
+      waitingQueue.push(socket.id);
+      console.log(`⏳ ${socket.id} re-added to queue`);
+    }
 
-  // Add the requesting player back to queue
-  if (!waitingQueue.includes(socket.id)) {
-    waitingQueue.push(socket.id);
-    console.log(`⏳ ${socket.id} re-added to queue`);
-  }
-
-  tryToMatchPlayers();
+    tryToMatchPlayers();
+  });
 });
 
 
@@ -460,7 +467,7 @@ io.to(playerRoomId).emit('gameState', room.gameState);
 
 
 
-});
+;
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
