@@ -491,7 +491,10 @@ players.forEach((playerId) => {
   io.to(playerId).emit('gameEnded');
 });
 
-removePlayerFromRooms(socket.id);
+players.forEach((playerId) => {
+  removePlayerFromRooms(playerId);
+});
+
 
 
 
