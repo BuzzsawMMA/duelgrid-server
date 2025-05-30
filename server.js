@@ -439,7 +439,10 @@ socket.onAny((event, ...args) => {
   // Leave all rooms
   for (const roomId of socket.rooms) {
     if (roomId !== socket.id) {
+      console.log("➡️ Rooms BEFORE leave:", Array.from(socket.rooms));
       socket.leave(roomId);
+      console.log("⬅️ Rooms AFTER leave:", Array.from(socket.rooms));
+
       console.log(`👋 Socket ${socket.id} forcibly left room ${roomId} on disconnect`);
     }
   }
