@@ -304,11 +304,6 @@ function removePlayerFromRooms(socketId) {
 io.on('connection', (socket) => {
   console.log(`✅ New connection: ${socket.id}`);
 
-  // Add new player to queue
-  waitingQueue.push(socket.id);
-  console.log(`⏳ Player ${socket.id} added to waiting queue`);
-  tryToMatchPlayers();
-
   // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
     console.log(`🔁 ${socket.id} clicked Play Again`);
