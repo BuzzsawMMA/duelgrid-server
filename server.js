@@ -303,13 +303,165 @@ function removePlayerFromRooms(socket, socketId) {
 
 
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
+  console.log(`✅ New connection: ${socket.id}`);
 
+  // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
-    console.log(`PlayAgain event received from ${socket.id}`);
-  });
+  console.log(`🔁 ${socket.id} clicked Play Again`);
+
+  const oldRoomId = players[socket.id];
+
+  console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
+  for (const roomId of socket.rooms) {
+    if (roomId !== socket.id) {
+      socket.leave(roomId);
+      console.log(`👋 Socket ${socket.id} forcibly left room ${roomId}`);
+    }
+  }
+  console.log(`✅ ${socket.id} rooms after leaving:`, Array.from(socket.rooms));
+
+  // Remove player from rooms and data structures
+  removePlayerFromRooms(socket, socket.id);
+
+  // Remove from players map explicitly if not done inside removePlayerFromRooms
+  if (players[socket.id]) {
+    delete players[socket.id];
+    console.log(`🗑️ Removed ${socket.id} from players mapping`);
+  }
+
+  // Re-add player to waitingQueue if not already there
+  if (!waitingQueue.includes(socket.id)) {
+    waitingQueue.push(socket.id);
+    console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
+  }
+
+  tryToMatchPlayers();
 });
 
+});
+
+app.get('/', (req, res) => {
+  res.send('Socket.IO server running');
+
+});
+
+socket.onAny((event, ...args) => {
+  console.log(`Received ${event} from ${socket.id}`, args ); 
+});
+
+  socket.on('endTurn', () => {
+  const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+  if (!playerRoomId) {
+    console.log(`endTurn: No room found for socket ${socket.id}`);
+    return;
+  }
+
+  const room = rooms[playerRoomId];
+  const playerTeam = room.players[socket.id]?.team;
+
+
+  if (room.gameState.turn !== playerTeam) {
+    console.log(`endTurn: Not player ${playerTeam}'s turn`);
+    socket.emit('invalidUpdate', 'It is not your turn.');
+    return;
+  }
+
+  // Switch turn
+  const newTurn = playerTeam === 'A' ? 'B' : 'A';
+
+  // Reset movesLeft and hasAttacked for new turn characters
+  const updatedCharacters = room.gameState.characters.map((char) => {
+    if (char.team === newTurn && char.hp > 0) {
+  const baseChar = BASE_CHARACTERS.find(bc => bc.name === char.name);
+  return {
+    ...char,
+    movesLeft: baseChar.moveRange,
+    hasAttacked: false,
+  };
+}
+
+    // Keep old team characters as-is
+    return char;
+  });
+
+  room.gameState = {
+    characters: updatedCharacters,
+    turn: newTurn,
+    winner: room.gameState.winner,
+  };
+
+  console.log(`Player ${playerTeam} ended turn. Now it's ${newTurn}'s turn.`);
+
+  io.to(playerRoomId).emit('gameState', room.gameState);
+
+});
+
+  socket.on('updateGame', (newState) => {
+    const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
+    if (!playerRoomId) {
+      console.log(`updateGame: No room found for socket ${socket.id}`);
+      return;
+    }
+
+    const room = rooms[playerRoomId];
+    const playerTeam = room.players[socket.id];
+    if (!playerTeam) {
+      console.log(`updateGame: Player team not found for socket ${socket.id}`);
+      return;
+    }
+
+    const valid = validateAndUpdateGameRoom(room, newState, playerTeam);
+
+    console.log(`Player ${playerTeam} (${socket.id}) sent updateGame. Valid: ${valid}`);
+
+    if (valid) {
+      io.to(playerRoomId).emit('gameState', room.gameState);
+    } else {
+      socket.emit('invalidUpdate', 'Your game state update was invalid.');
+    }
+  });
+
+  socket.on('disconnect', () => {
+  console.log('🔌 Player disconnected:', socket.id);
+
+  // Leave all rooms
+  for (const roomId of socket.rooms) {
+    if (roomId !== socket.id) {
+      console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
+      console.log(`⚠️ Attempting to leave room: ${oldRoomId}, present?`, socket.rooms.has(oldRoomId));
+      socket.leave(roomId);
+      console.log(`👋 Socket ${socket.id} forcibly left room ${roomId} on disconnect`);
+    }
+  }
+
+  removePlayerFromRooms(socket.id);
+
+  const index = waitingQueue.indexOf(socket.id);
+  if (index !== -1) {
+    waitingQueue.splice(index, 1);
+    console.log(`🧹 Removed ${socket.id} from queue on disconnect`);
+  }
+});
+
+
+  socket.on('surrender', () => {
+  const roomId = findRoomOfPlayer(socket.id);
+  if (!roomId) return;
+
+  const players = rooms[roomId];
+  const winner = players.find((id) => id !== socket.id);
+
+  if (winner) {
+    io.to(roomId).emit('gameOver', { winnerId: winner });
+  }
+
+  // ✅ Let both clients know the game ended and they can click 'Play Again'
+  players.forEach((playerId) => {
+    io.to(playerId).emit('gameEnded');
+  });
+
+  removePlayerFromRooms(socket.id);
+});
 
 
 
