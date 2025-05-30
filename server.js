@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const players = {}; // socket.id => roomId
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -62,7 +63,7 @@ function tryToMatchPlayers() {
       continue;
     }
 
-    const roomId = `room-${playerAId}-${playerBId}`;
+    const roomId = `room-${crypto.randomUUID()}`;
     rooms[roomId] = {
       players: {
         [playerAId]: { team: 'A' },
@@ -336,19 +337,29 @@ io.on('connection', (socket) => {
   console.log(`✅ New connection: ${socket.id}`);
 
   // Always listen for playAgain on every socket
-  socket.on('playAgain', () => {
+  socket.on('playAgain', async () => {
   console.log(`🔁 ${socket.id} clicked Play Again`);
 
-  fullyRemovePlayer(socket);
+  const oldRoomId = players[socket.id];
+  if (oldRoomId) {
+    await io.in(oldRoomId).socketsLeave(oldRoomId); // force all sockets to leave
+    delete rooms[oldRoomId];
+    console.log(`🧹 Forcefully deleted room ${oldRoomId}`);
+  }
 
-  // Add back to waitingQueue to be matched again
-  if (!waitingQueue.includes(socket.id)) {
+  // Remove player from mapping
+  delete players[socket.id];
+
+  // Remove from waiting queue if already in it (avoid duplicates)
+  const idx = waitingQueue.indexOf(socket.id);
+  if (idx === -1) {
     waitingQueue.push(socket.id);
     console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
   }
 
   tryToMatchPlayers();
 });
+
 
 
 
