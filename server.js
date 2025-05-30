@@ -307,49 +307,37 @@ io.on('connection', (socket) => {
 
   // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
-    console.log(`🔁 ${socket.id} clicked Play Again`);
+  console.log(`🔁 ${socket.id} clicked Play Again`);
 
-    const oldRoomId = players[socket.id];
+  const oldRoomId = players[socket.id];
 
-    if (oldRoomId && rooms[oldRoomId]) {
-      socket.leave(oldRoomId);
-      console.log(`➡️ ${socket.id} left old room ${oldRoomId}`);
-
-      // Find and handle the opponent
-      const otherPlayerId = Object.keys(rooms[oldRoomId].players).find(id => id !== socket.id);
-      const otherSocket = io.sockets.sockets.get(otherPlayerId);
-
-      if (otherSocket) {
-        otherSocket.leave(oldRoomId);
-        otherSocket.emit('opponentLeft');
-        console.log(`🚪 ${otherPlayerId} also left old room ${oldRoomId}`);
-        removePlayerFromRooms(socket, socket.id);
-        if (otherSocket) removePlayerFromRooms(otherSocket, otherPlayerId);
-
-
-        // Requeue opponent if not already
-        if (!waitingQueue.includes(otherPlayerId)) {
-          waitingQueue.push(otherPlayerId);
-          console.log(`⏳ ${otherPlayerId} re-added to queue`);
-        }
-
-        delete players[otherPlayerId];
-      }
-
-      // Clean up room tracking
-      delete rooms[oldRoomId];
-      delete players[socket.id];
-      console.log(`🧹 Cleaned up room ${oldRoomId}`);
+  console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
+  for (const roomId of socket.rooms) {
+    if (roomId !== socket.id) {
+      socket.leave(roomId);
+      console.log(`👋 Socket ${socket.id} forcibly left room ${roomId}`);
     }
+  }
+  console.log(`✅ ${socket.id} rooms after leaving:`, Array.from(socket.rooms));
 
-    // Re-add this player to the queue if not already
-    if (!waitingQueue.includes(socket.id)) {
-      waitingQueue.push(socket.id);
-      console.log(`⏳ ${socket.id} re-added to queue`);
-    }
+  // Remove player from rooms and data structures
+  removePlayerFromRooms(socket.id);
 
-    tryToMatchPlayers();
-  });
+  // Remove from players map explicitly if not done inside removePlayerFromRooms
+  if (players[socket.id]) {
+    delete players[socket.id];
+    console.log(`🗑️ Removed ${socket.id} from players mapping`);
+  }
+
+  // Re-add player to waitingQueue if not already there
+  if (!waitingQueue.includes(socket.id)) {
+    waitingQueue.push(socket.id);
+    console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
+  }
+
+  tryToMatchPlayers();
+});
+
 });
 
 app.get('/', (req, res) => {
@@ -439,10 +427,9 @@ socket.onAny((event, ...args) => {
   // Leave all rooms
   for (const roomId of socket.rooms) {
     if (roomId !== socket.id) {
-      console.log("➡️ Rooms BEFORE leave:", Array.from(socket.rooms));
+      console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
+      console.log(`⚠️ Attempting to leave room: ${oldRoomId}, present?`, socket.rooms.has(oldRoomId));
       socket.leave(roomId);
-      console.log("⬅️ Rooms AFTER leave:", Array.from(socket.rooms));
-
       console.log(`👋 Socket ${socket.id} forcibly left room ${roomId} on disconnect`);
     }
   }
