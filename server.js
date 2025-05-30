@@ -284,20 +284,22 @@ oldChar.hp = newChar.hp;
 }
 
 
-function removePlayerFromRooms(socket, socketId) {
-  for (const [roomId, room] of Object.entries(rooms)) {
+function removePlayerFromRooms(socketId) {
+  for (const roomId in rooms) {
+    const room = rooms[roomId];
+
     if (room.players[socketId]) {
       delete room.players[socketId];
+
+      // If no players left, delete the room
       if (Object.keys(room.players).length === 0) {
         delete rooms[roomId];
-        console.log(`🗑️ Deleted empty room ${roomId}`);
-      } else {
-        console.log(`❌ Removed ${socketId} from room ${roomId}`);
+        console.log(`🧹 Deleted empty room ${roomId}`);
       }
-      socket.leave(roomId); // Directly on socket
     }
   }
 }
+
 
 
 
@@ -309,34 +311,37 @@ io.on('connection', (socket) => {
   socket.on('playAgain', () => {
   console.log(`🔁 ${socket.id} clicked Play Again`);
 
+  // Get the current room for this player
   const oldRoomId = players[socket.id];
 
-  console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
-  for (const roomId of socket.rooms) {
-    if (roomId !== socket.id) {
-      socket.leave(roomId);
-      console.log(`👋 Socket ${socket.id} forcibly left room ${roomId}`);
-    }
-  }
-  console.log(`✅ ${socket.id} rooms after leaving:`, Array.from(socket.rooms));
+  // Remove player from your room data structure
+  removePlayerFromRooms(socket.id);
 
-  // Remove player from rooms and data structures
-  removePlayerFromRooms(socket, socket.id);
-
-  // Remove from players map explicitly if not done inside removePlayerFromRooms
+  // Remove the player -> room mapping
   if (players[socket.id]) {
     delete players[socket.id];
     console.log(`🗑️ Removed ${socket.id} from players mapping`);
   }
 
-  // Re-add player to waitingQueue if not already there
+  // Leave all Socket.IO rooms except personal room
+  const roomsToLeave = Array.from(socket.rooms).filter(r => r !== socket.id);
+  for (const roomId of roomsToLeave) {
+    socket.leave(roomId);
+    console.log(`👋 Socket ${socket.id} forcibly left room ${roomId}`);
+  }
+
+  console.log(`✅ ${socket.id} rooms after leaving:`, Array.from(socket.rooms));
+
+  // Add player back to waiting queue if not already there
   if (!waitingQueue.includes(socket.id)) {
     waitingQueue.push(socket.id);
     console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
   }
 
+  // Try to match players now
   tryToMatchPlayers();
 });
+
 
 });
 
@@ -426,13 +431,12 @@ socket.onAny((event, ...args) => {
 
   // Leave all rooms
   for (const roomId of socket.rooms) {
-    if (roomId !== socket.id) {
-      console.log(`⚠️ ${socket.id} rooms before leave:`, Array.from(socket.rooms));
-      console.log(`⚠️ Attempting to leave room: ${oldRoomId}, present?`, socket.rooms.has(oldRoomId));
-      socket.leave(roomId);
-      console.log(`👋 Socket ${socket.id} forcibly left room ${roomId} on disconnect`);
-    }
+  if (roomId !== socket.id) {
+    console.log(`⚠️ ${socket.id} is in room: ${roomId}`);
+    socket.leave(roomId);
+    console.log(`👋 Socket ${socket.id} left room ${roomId}`);
   }
+}
 
   removePlayerFromRooms(socket.id);
 
@@ -448,24 +452,23 @@ socket.onAny((event, ...args) => {
   const roomId = findRoomOfPlayer(socket.id);
   if (!roomId) return;
 
-  const players = rooms[roomId];
-  const winner = players.find((id) => id !== socket.id);
+  const room = rooms[roomId];
+const players = Object.keys(room.players);
+const winner = players.find((id) => id !== socket.id);
 
-  if (winner) {
-    io.to(roomId).emit('gameOver', { winnerId: winner });
-  }
+if (winner) {
+  io.to(roomId).emit('gameOver', { winnerId: winner });
+}
 
-  // ✅ Let both clients know the game ended and they can click 'Play Again'
-  players.forEach((playerId) => {
-    io.to(playerId).emit('gameEnded');
-  });
-
-  removePlayerFromRooms(socket.id);
+players.forEach((playerId) => {
+  io.to(playerId).emit('gameEnded');
 });
 
+removePlayerFromRooms(socket.id);
 
 
-;
+
+  });
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
