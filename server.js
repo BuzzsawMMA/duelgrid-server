@@ -16,6 +16,7 @@ const io = new Server(server, {
    },
   transports: ['websocket'],
 });
+const lastPing = {};  // Track last ping timestamp per socket.id
 
 const GRID_SIZE = 8;
 const BASE_CHARACTERS = [
@@ -371,6 +372,10 @@ io.on('connection', (socket) => {
 });
 
 
+// Track the last ping time whenever client sends 'ping'
+socket.on('ping', () => {
+  lastPing[socket.id] = Date.now();
+});
 
 
 
@@ -555,6 +560,36 @@ socket.onAny((event, ...args) => {
   tryToMatchPlayers();
   console.log('▶️ Called tryToMatchPlayers');
 });
+function handleDisconnection(playerId) {
+  const roomId = players[playerId];
+  const room = rooms[roomId];
+
+  if (!roomId || !room) {
+    console.log('⚠️ No room found for disconnected player.');
+    return;
+  }
+
+  const opponentId = Object.keys(room.players).find(id => id !== playerId);
+
+  if (opponentId) {
+    io.to(opponentId).emit('gameOver', { winnerId: opponentId, reason: 'opponentDisconnected' });
+    io.to(opponentId).emit('gameEnded');
+    console.log(`🏆 ${opponentId} wins by disconnection of ${playerId}`);
+
+    const opponentSocket = io.sockets.sockets.get(opponentId);
+    if (opponentSocket) {
+      opponentSocket.leave(roomId);
+      if (!waitingQueue.includes(opponentId)) {
+        waitingQueue.push(opponentId);
+        console.log(`⏳ ${opponentId} re-added to queue`);
+      }
+    }
+  }
+
+  delete rooms[roomId];
+  delete players[playerId];
+}
+
 
 
 
