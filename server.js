@@ -480,25 +480,40 @@ socket.onAny((event, ...args) => {
   if (!roomId) return;
 
   const room = rooms[roomId];
-const players = Object.keys(room.players);
-const winner = players.find((id) => id !== socket.id);
+  const playersInRoom = Object.keys(room.players);
+  const winner = playersInRoom.find((id) => id !== socket.id);
 
-if (winner) {
-  io.to(roomId).emit('gameOver', { winnerId: winner });
-}
+  if (winner) {
+    io.to(roomId).emit('gameOver', { winnerId: winner });
+  }
 
-players.forEach((playerId) => {
-  io.to(playerId).emit('gameEnded');
-});
+  playersInRoom.forEach((playerId) => {
+    io.to(playerId).emit('gameEnded');
+    
+    // 🔁 Ensure all are removed from the room
+    const socketRef = io.sockets.sockets.get(playerId);
+    if (socketRef) {
+      socketRef.leave(roomId);
+      console.log(`👋 ${playerId} left room ${roomId}`);
+    }
 
-players.forEach((playerId) => {
-  removePlayerFromRooms(playerId);
-});
+    // 🗑️ Clean up players and rooms
+    removePlayerFromRooms(playerId);
+    delete players[playerId];
 
-
-
-
+    // ♻️ Requeue for matchmaking
+    if (!waitingQueue.includes(playerId)) {
+      waitingQueue.push(playerId);
+      console.log(`⏳ Re-added ${playerId} to queue`);
+    }
   });
+
+  delete rooms[roomId];
+  console.log(`🧼 Deleted room ${roomId} after surrender`);
+
+  tryToMatchPlayers();
+});
+
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
