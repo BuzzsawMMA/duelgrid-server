@@ -353,7 +353,9 @@ app.get('/', (req, res) => {
 
 });
 
-
+socket.onAny((event, ...args) => {
+  console.log('Received ${event} from ${socket.id}', args ); 
+});
 
   socket.on('endTurn', () => {
   const playerRoomId = Object.keys(rooms).find(roomId => rooms[roomId].players[socket.id]);
@@ -398,7 +400,7 @@ app.get('/', (req, res) => {
 
   console.log(`Player ${playerTeam} ended turn. Now it's ${newTurn}'s turn.`);
 
-io.to(playerRoomId).emit('gameState', room.gameState);
+  io.to(playerRoomId).emit('gameState', room.gameState);
 
 });
 
