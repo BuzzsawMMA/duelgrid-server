@@ -464,12 +464,13 @@ socket.onAny((event, ...args) => {
   console.log('🔌 Player disconnected:', socket.id);
 
   const roomId = players[socket.id];
-  if (!roomId || !rooms[roomId]) {
-    fullyRemovePlayer(socket); // still remove just in case
+  const room = rooms[roomId];
+
+  if (!roomId || !room) {
+    console.log('⚠️ No room found for disconnected player.');
     return;
   }
 
-  const room = rooms[roomId];
   const opponentId = Object.keys(room.players).find(id => id !== socket.id);
 
   if (opponentId) {
@@ -480,11 +481,13 @@ socket.onAny((event, ...args) => {
     console.log('⚠️ No opponent found for disconnected player.');
   }
 
-  // Clean up
   delete rooms[roomId];
   delete players[socket.id];
   if (opponentId) delete players[opponentId];
+
+  fullyRemovePlayer(socket); // <- move this here
 });
+
 
 
 
