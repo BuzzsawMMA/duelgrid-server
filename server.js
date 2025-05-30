@@ -474,19 +474,28 @@ socket.onAny((event, ...args) => {
   const opponentId = Object.keys(room.players).find(id => id !== socket.id);
 
   if (opponentId) {
-    io.to(roomId).emit('gameOver', { winnerId: opponentId });
-    io.to(opponentId).emit('gameEnded');
+    // Emit to opponent that they won by disconnect
+    io.to(opponentId).emit('gameOver', { winnerId: opponentId, reason: 'opponentDisconnected' });
     console.log(`🏆 ${opponentId} wins by disconnect of ${socket.id}`);
+
+    // Keep opponent's player entry, only remove the disconnecting player
+    delete players[socket.id];
   } else {
     console.log('⚠️ No opponent found for disconnected player.');
+    delete players[socket.id];
   }
 
-  delete rooms[roomId];
-  delete players[socket.id];
-  if (opponentId) delete players[opponentId];
+  // Remove player from room
+  delete room.players[socket.id];
 
-  fullyRemovePlayer(socket); // <- move this here
+  // If no players left, delete room
+  if (Object.keys(room.players).length === 0) {
+    delete rooms[roomId];
+  }
+
+  fullyRemovePlayer(socket);
 });
+
 
 
 
