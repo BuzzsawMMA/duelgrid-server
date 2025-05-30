@@ -284,23 +284,51 @@ oldChar.hp = newChar.hp;
 }
 
 
-function removePlayerFromRooms(socketId) {
+function fullyRemovePlayer(socket) {
+  const socketId = socket.id;
+
+  // Leave all rooms except the default personal room
+  for (const roomId of socket.rooms) {
+    if (roomId !== socketId) {
+      socket.leave(roomId);
+      console.log(`👋 Socket ${socketId} left room ${roomId}`);
+    }
+  }
+
+  // Remove from server-side rooms object
+  let removedFromRoom = false;
   for (const roomId in rooms) {
     const room = rooms[roomId];
-
     if (room.players[socketId]) {
       delete room.players[socketId];
+      removedFromRoom = true;
+      console.log(`🧹 Removed ${socketId} from room ${roomId}`);
 
-      // If no players left, delete the room
+      // If room empty, delete it
       if (Object.keys(room.players).length === 0) {
         delete rooms[roomId];
         console.log(`🧹 Deleted empty room ${roomId}`);
       }
     }
   }
+  
+  if (!removedFromRoom) {
+    console.log(`⚠️ Player ${socketId} was not in any room`);
+  }
+
+  // Remove from players map
+  if (players[socketId]) {
+    delete players[socketId];
+    console.log(`🗑️ Removed ${socketId} from players mapping`);
+  }
+
+  // Remove from waitingQueue if present
+  const index = waitingQueue.indexOf(socketId);
+  if (index !== -1) {
+    waitingQueue.splice(index, 1);
+    console.log(`🧹 Removed ${socketId} from waitingQueue`);
+  }
 }
-
-
 
 
 
@@ -311,27 +339,9 @@ io.on('connection', (socket) => {
   socket.on('playAgain', () => {
   console.log(`🔁 ${socket.id} clicked Play Again`);
 
-  // Get all rooms the socket is currently in (except its own private room)
-  const roomsToLeave = Array.from(socket.rooms).filter(roomId => roomId !== socket.id);
+  fullyRemovePlayer(socket);
 
-  // Remove the player from internal rooms and clean empty rooms
-  removePlayerFromRooms(socket.id);
-
-  // Remove player from players map
-  if (players[socket.id]) {
-    delete players[socket.id];
-    console.log(`🗑️ Removed ${socket.id} from players mapping`);
-  }
-
-  // Leave all the Socket.IO rooms
-  for (const roomId of roomsToLeave) {
-    socket.leave(roomId);
-    console.log(`👋 Socket ${socket.id} forcibly left room ${roomId}`);
-  }
-
-  console.log(`✅ ${socket.id} rooms after leaving:`, Array.from(socket.rooms));
-
-  // Re-add to waitingQueue if not already there
+  // Add back to waitingQueue to be matched again
   if (!waitingQueue.includes(socket.id)) {
     waitingQueue.push(socket.id);
     console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
@@ -425,20 +435,16 @@ socket.onAny((event, ...args) => {
     }
   });
 
+
+
+  // Leave all rooms
   socket.on('disconnect', () => {
   console.log('🔌 Player disconnected:', socket.id);
 
-  // Leave all rooms
-  for (const roomId of socket.rooms) {
-  if (roomId !== socket.id) {
-    console.log(`⚠️ ${socket.id} is in room: ${roomId}`);
-    socket.leave(roomId);
-    console.log(`👋 Socket ${socket.id} left room ${roomId}`);
-  }
-}
+  // Remove player from rooms and mappings
+  fullyRemovePlayer(socket);
 
-  removePlayerFromRooms(socket.id);
-
+  // Remove from waitingQueue if present
   const index = waitingQueue.indexOf(socket.id);
   if (index !== -1) {
     waitingQueue.splice(index, 1);
