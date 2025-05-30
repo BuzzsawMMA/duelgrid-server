@@ -337,28 +337,39 @@ io.on('connection', (socket) => {
   console.log(`✅ New connection: ${socket.id}`);
 
   // Always listen for playAgain on every socket
-  socket.on('playAgain', async () => {
+  socket.on('playAgain', () => {
   console.log(`🔁 ${socket.id} clicked Play Again`);
 
-  const oldRoomId = players[socket.id];
-  if (oldRoomId) {
-    await io.in(oldRoomId).socketsLeave(oldRoomId); // force all sockets to leave
-    delete rooms[oldRoomId];
-    console.log(`🧹 Forcefully deleted room ${oldRoomId}`);
+  const roomId = players[socket.id];
+  if (roomId && rooms[roomId]) {
+    const room = rooms[roomId];
+    const allPlayerIds = Object.keys(room.players);
+
+    // Remove both players from players map and rooms
+    allPlayerIds.forEach(id => {
+      const playerSocket = io.sockets.sockets.get(id);
+      if (playerSocket) {
+        for (const r of playerSocket.rooms) {
+          if (r !== id) playerSocket.leave(r);
+        }
+      }
+      delete players[id];
+      removeFromWaitingQueue(id);
+    });
+
+    delete rooms[roomId];
+    console.log(`🧹 Room ${roomId} cleaned up`);
   }
 
-  // Remove player from mapping
-  delete players[socket.id];
-
-  // Remove from waiting queue if already in it (avoid duplicates)
-  const idx = waitingQueue.indexOf(socket.id);
-  if (idx === -1) {
+  // Requeue just this socket
+  if (!waitingQueue.includes(socket.id)) {
     waitingQueue.push(socket.id);
-    console.log(`⏳ Re-added ${socket.id} to waitingQueue`);
+    console.log(`⏳ ${socket.id} re-added to queue`);
   }
 
   tryToMatchPlayers();
 });
+
 
 
 
