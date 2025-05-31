@@ -9,6 +9,21 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors());
+app.use(express.json()); // <--- Add this to parse JSON bodies
+
+// ✅ Add the disconnect route
+app.post('/disconnect', (req, res) => {
+  const { socketId } = req.body;
+  console.log(`💀 Forcing disconnect for: ${socketId}`);
+
+  const socket = io.sockets.sockets.get(socketId);
+  if (socket) {
+    socket.emit('playerDisconnected'); // Optionally notify before force-disconnect
+    socket.disconnect(true);
+  }
+
+  res.sendStatus(200);
+});
 
 const io = new Server(server, {
   cors: { origin: '*',
