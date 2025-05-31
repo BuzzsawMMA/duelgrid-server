@@ -496,15 +496,26 @@ socket.onAny((event, ...args) => {
 
   // Leave all rooms
   socket.on('disconnect', () => {
-  console.log('🔌 Player disconnected:', socket.id);
-  handleDisconnection(socket.id); // Make sure this line calls the function
+  const roomId = players[socket.id];
+  const room = rooms[roomId];
+
+  if (!roomId || !room) return;
+
+  const opponentId = Object.keys(room.players).find(id => id !== socket.id);
+  if (opponentId) {
+    io.to(opponentId).emit('gameOver', {
+      winnerId: opponentId,
+      reason: 'opponentDisconnected'
+    });
+  }
+
+  delete room.players[socket.id];
+  delete players[socket.id];
+
+  if (Object.keys(room.players).length === 0) {
+    delete rooms[roomId];
+  }
 });
-
-
-
-
-
-
 
 
   socket.on('surrender', () => {
