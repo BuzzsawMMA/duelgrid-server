@@ -396,6 +396,17 @@ function handleDisconnection(playerId) {
 io.on('connection', (socket) => {
   console.log(`✅ New connection: ${socket.id}`);
 
+  socket.on('disconnect', () => {
+    const roomId = players[socket.id];
+    if (roomId) {
+      const opponent = [...io.sockets.adapter.rooms.get(roomId) || []].find(id => id !== socket.id);
+      if (opponent) {
+        io.to(opponent).emit('opponent-disconnected');
+        console.log(`⚠️ Opponent ${opponent} notified of disconnect`);
+      }
+    }
+    delete players[socket.id];
+  });
   // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
   console.log(`🔁 ${socket.id} clicked Play Again`);
