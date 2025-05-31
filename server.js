@@ -467,39 +467,9 @@ socket.onAny((event, ...args) => {
   // Leave all rooms
   socket.on('disconnect', () => {
   console.log('🔌 Player disconnected:', socket.id);
-
-  const roomId = players[socket.id];
-  const room = rooms[roomId];
-
-  if (!roomId || !room) {
-    console.log('⚠️ No room found for disconnected player.');
-    return;
-  }
-
-  const opponentId = Object.keys(room.players).find(id => id !== socket.id);
-
-  if (opponentId) {
-    // Emit to opponent that they won by disconnect
-    io.to(opponentId).emit('gameOver', { winnerId: opponentId, reason: 'opponentDisconnected' });
-    console.log(`🏆 ${opponentId} wins by disconnect of ${socket.id}`);
-
-    // Keep opponent's player entry, only remove the disconnecting player
-    delete players[socket.id];
-  } else {
-    console.log('⚠️ No opponent found for disconnected player.');
-    delete players[socket.id];
-  }
-
-  // Remove player from room
-  delete room.players[socket.id];
-
-  // If no players left, delete room
-  if (Object.keys(room.players).length === 0) {
-    delete rooms[roomId];
-  }
-
-  fullyRemovePlayer(socket);
+  handleDisconnection(socket.id);
 });
+
 
 
 
@@ -579,15 +549,25 @@ function handleDisconnection(playerId) {
     const opponentSocket = io.sockets.sockets.get(opponentId);
     if (opponentSocket) {
       opponentSocket.leave(roomId);
+
+      // Optional: re-add opponent to queue
       if (!waitingQueue.includes(opponentId)) {
         waitingQueue.push(opponentId);
         console.log(`⏳ ${opponentId} re-added to queue`);
       }
     }
+  } else {
+    console.log('⚠️ No opponent found for disconnected player.');
   }
 
-  delete rooms[roomId];
+  // Cleanup room and player
   delete players[playerId];
+  if (room) {
+    delete room.players[playerId];
+    if (Object.keys(room.players).length === 0) {
+      delete rooms[roomId];
+    }
+  }
 }
 
 
