@@ -332,6 +332,36 @@ function fullyRemovePlayer(socket) {
   }
 }
 
+function handleDisconnection(playerId) {
+  const roomId = players[playerId];
+  const room = rooms[roomId];
+
+  if (!roomId || !room) {
+    console.log('⚠️ No room found for disconnected player.');
+    return;
+  }
+
+  const opponentId = Object.keys(room.players).find(id => id !== playerId);
+
+  if (opponentId) {
+    io.to(opponentId).emit('gameOver', { winnerId: opponentId, reason: 'opponentDisconnected' });
+    io.to(opponentId).emit('gameEnded');
+
+    console.log(`🏆 ${opponentId} wins by disconnection of ${playerId}`);
+
+    const opponentSocket = io.sockets.sockets.get(opponentId);
+    if (opponentSocket) {
+      opponentSocket.leave(roomId);
+      if (!waitingQueue.includes(opponentId)) {
+        waitingQueue.push(opponentId);
+        console.log(`⏳ ${opponentId} re-added to queue`);
+      }
+    }
+  }
+
+  delete rooms[roomId];
+  delete players[playerId];
+}
 
 
 io.on('connection', (socket) => {
@@ -465,7 +495,11 @@ socket.onAny((event, ...args) => {
 
 
   // Leave all rooms
-  
+  socket.on('disconnect', () => {
+  console.log('🔌 Player disconnected:', socket.id);
+  handleDisconnection(socket.id); // Make sure this line calls the function
+});
+
 
 
 
@@ -526,37 +560,6 @@ socket.onAny((event, ...args) => {
   tryToMatchPlayers();
   console.log('▶️ Called tryToMatchPlayers');
 });
-function handleDisconnection(playerId) {
-  const roomId = players[playerId];
-  const room = rooms[roomId];
-
-  if (!roomId || !room) return;
-
-  const opponentId = Object.keys(room.players).find(id => id !== playerId);
-
-  if (opponentId) {
-    io.to(opponentId).emit('gameOver', { winnerId: opponentId, reason: 'opponentDisconnected' });
-    io.to(opponentId).emit('gameEnded');
-
-    const opponentSocket = io.sockets.sockets.get(opponentId);
-    if (opponentSocket) {
-      opponentSocket.leave(roomId);
-      if (!waitingQueue.includes(opponentId)) {
-        waitingQueue.push(opponentId);
-      }
-    }
-  }
-
-  delete rooms[roomId];
-  delete players[playerId];
-}
-
-socket.on('disconnect', () => {
-  console.log('🔥 SERVER: disconnect received from', socket.id);
-  handleDisconnection(socket.id);
-});
-
-
 
 
 
