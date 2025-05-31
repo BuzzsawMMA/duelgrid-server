@@ -584,6 +584,12 @@ socket.onAny((event, ...args) => {
   socket.data.room = null;
 });
 
+  socket.on('playerDisconnected', () => {
+    // Declare opponent as winner
+    declareOpponentWinner(socket.id);
+});
+
+
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
