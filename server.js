@@ -14,16 +14,30 @@ app.use(express.json()); // <--- Add this to parse JSON bodies
 // ✅ Add the disconnect route
 app.post('/disconnect', (req, res) => {
   const { socketId } = req.body;
-  console.log(`💀 Forcing disconnect for: ${socketId}`);
 
   const socket = io.sockets.sockets.get(socketId);
   if (socket) {
-    socket.emit('playerDisconnected'); // Optionally notify before force-disconnect
+    const roomId = players[socket.id];
+    if (roomId) {
+      const opponent = [...io.sockets.adapter.rooms.get(roomId)].find(
+        id => id !== socket.id
+      );
+
+      if (opponent && io.sockets.sockets.get(opponent)) {
+        io.to(opponent).emit('opponent-disconnected'); // 👈 trigger win
+        console.log(`✅ Opponent ${opponent} wins due to ${socket.id} disconnecting`);
+      }
+
+      delete players[socket.id];
+    }
+
     socket.disconnect(true);
+    console.log('💀 Disconnected socket:', socket.id);
   }
 
   res.sendStatus(200);
 });
+
 
 const io = new Server(server, {
   cors: { origin: '*',
