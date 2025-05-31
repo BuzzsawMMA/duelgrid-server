@@ -572,6 +572,17 @@ socket.onAny((event, ...args) => {
   console.log('▶️ Called tryToMatchPlayers');
 });
 
+  socket.on("manualDisconnect", () => {
+  const room = socket.data.room;
+  const opponentId = socket.data.opponent;
+
+  if (room && opponentId && io.sockets.sockets.get(opponentId)) {
+    io.to(opponentId).emit("opponentLeft", { winner: opponentId });
+  }
+
+  socket.leave(room);
+  socket.data.room = null;
+});
 
 
 const PORT = process.env.PORT || 5001;
