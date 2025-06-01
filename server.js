@@ -394,18 +394,27 @@ function handleDisconnection(playerId) {
 
 
 io.on('connection', (socket) => {
-  console.log(`✅ New connection: ${socket.id}`);
+  console.log(`✅ Connected: ${socket.id}`);
+
+  // Save player's room
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    players[socket.id] = roomId;
+  });
 
   socket.on('disconnect', () => {
     const roomId = players[socket.id];
     if (roomId) {
-      const opponent = [...io.sockets.adapter.rooms.get(roomId) || []].find(id => id !== socket.id);
-      if (opponent) {
-        io.to(opponent).emit('opponent-disconnected');
-        console.log(`⚠️ Opponent ${opponent} notified of disconnect`);
+      const room = io.sockets.adapter.rooms.get(roomId);
+      const opponentId = [...room || []].find(id => id !== socket.id);
+
+      if (opponentId) {
+        io.to(opponentId).emit('opponent-disconnected');
+        console.log(`⚠️ ${socket.id} disconnected. ${opponentId} wins.`);
       }
+
+      delete players[socket.id];
     }
-    delete players[socket.id];
   });
   // Always listen for playAgain on every socket
   socket.on('playAgain', () => {
